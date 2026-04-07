@@ -536,8 +536,8 @@ def screen_start():
 
         tp  = (math.sin(t * 0.0026) + 1) * 0.5
         tc  = tuple(int(PURPLE[i] * (0.68 + 0.32 * tp)) for i in range(3))
-        blit_text(screen, "wassah merlin", F_HUGE, tc, SW//2, 85)
-        blit_text(screen, "Skibidi toilet", F_SM, GRAY, SW//2, 155)
+        blit_text(screen, "KGB x Roboclub", F_HUGE, tc, SW//2, 85)
+        blit_text(screen, "Toby Fox Game", F_SM, GRAY, SW//2, 155)
 
         blit_text(screen, "CONTROLS", F_SM, WHITE, SW//2, SH - 215)
         for label, (r, c) in [
