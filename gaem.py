@@ -8,6 +8,7 @@ import struct
 # ═══════════════════════════════════════════════════════════════════════════
 pygame.init()
 pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
+pygame.joystick.init()
 
 SW, SH = 1920, 1080
 screen = pygame.display.set_mode((SW, SH))
@@ -58,7 +59,7 @@ import level_megalovania
 import level_bigshot
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  CONTROLS  (DDR pad mapped to keyboard)
+#  CONTROLS  (DDR pad mapped to keyboard + joystick)
 # ═══════════════════════════════════════════════════════════════════════════
 #   U I O   →   (0,0) (0,1) (0,2)
 #   J   L   →   (1,0)       (1,2)
@@ -69,6 +70,37 @@ KEY_POS = {
     pygame.K_m: (2, 0),   pygame.K_COMMA: (2, 1), pygame.K_PERIOD: (2, 2),
 }
 CENTER = (1, 1)
+
+# ── Joystick setup ───────────────────────────────────────────────────────────
+_joysticks = []
+for _i in range(pygame.joystick.get_count()):
+    _j = pygame.joystick.Joystick(_i)
+    _j.init()
+    _joysticks.append(_j)
+    print(f"[JOY] Found: {_j.get_name()}")
+
+# Hat → grid cell.  SDL hat: X -1=left 1=right, Y -1=down 1=up
+HAT_POS = {
+    (-1,  1): (0, 0),  # up-left
+    ( 0,  1): (0, 1),  # up
+    ( 1,  1): (0, 2),  # up-right
+    (-1,  0): (1, 0),  # left
+    ( 1,  0): (1, 2),  # right
+    (-1, -1): (2, 0),  # down-left
+    ( 0, -1): (2, 1),  # down
+    ( 1, -1): (2, 2),  # down-right
+    ( 0,  0): CENTER,
+}
+
+# Axis fallback (for adapters that report as axes instead of a hat)
+_joy_axes  = [0.0, 0.0]   # [x, y]
+_AX_DEAD   = 0.5
+
+def _axes_to_pos():
+    x, y = _joy_axes
+    row = 1 if abs(y) < _AX_DEAD else (0 if y < 0 else 2)
+    col = 1 if abs(x) < _AX_DEAD else (0 if x < 0 else 2)
+    return CENTER if (row == 1 and col == 1) else (row, col)
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  FONTS
@@ -110,6 +142,19 @@ except (pygame.error, FileNotFoundError):
     HEART_BASE = HEART_HIT = HEART_DGD = None
     HEART_LOADED = False
 
+# ── Sidebar character images ─────────────────────────────────────────────────
+def _load_sidebar(filename):
+    try:
+        raw = pygame.image.load(filename).convert_alpha()
+        h   = GH
+        w   = int(raw.get_width() * h / raw.get_height())
+        return pygame.transform.smoothscale(raw, (w, h))
+    except (pygame.error, FileNotFoundError):
+        return None
+
+IMG_SANS      = _load_sidebar("sans.png")
+IMG_SPAMTON   = _load_sidebar("spamtonneo.png")
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  SOUNDS  (synthesised – no external files needed)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -148,20 +193,23 @@ LEVELS = [
         'bpm':      120,
         'music':    'Megalovania.ogg',
         'data':     level_megalovania.build_level(warn_beats=1),
+        'sidebar':  IMG_SANS,
     },
-    {
-        'name':     'Megalovania Easy Mode',
-        'subtitle': '120 BPM  \u00b7  40 s  \u00b7  2-beat warn',
-        'bpm':      120,
-        'music':    'Megalovania.ogg',
-        'data':     level_megalovania.build_level(warn_beats=2),
-    },
+    #{
+    #    'name':     'Megalovania Easy Mode',
+    #    'subtitle': '120 BPM  \u00b7  40 s  \u00b7  2-beat warn',
+    #    'bpm':      120,
+    #    'music':    'Megalovania.ogg',
+    #    'data':     level_megalovania.build_level(warn_beats=2),
+    #    'sidebar':  IMG_SANS,
+    #},
     {
         'name':     '[[BIG SHOT]]',
         'subtitle': '140 BPM  \u00b7  40 s  \u00b7  1-beat warn',
         'bpm':      140,
         'music':    'BIGSHOT.ogg',
         'data':     level_bigshot.build_level(),
+        'sidebar':  IMG_SPAMTON,
     },
 ]
 
@@ -319,6 +367,14 @@ def draw_hud(surf, score, elapsed_ms, total_ms, streak):
     blit_text(surf, f"{secs_left:05.2f}s", F_XS, GRAY, bx + bw + 10, by - 1, 'topleft')
 
 
+def draw_sidebar(surf, img):
+    if img is None:
+        return
+    x = GX + GW + 40
+    y = GY
+    surf.blit(img, (x, y))
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  SCREEN: TITLE
 # ═══════════════════════════════════════════════════════════════════════════
@@ -334,6 +390,8 @@ def screen_start():
             if ev.type == pygame.KEYDOWN:
                 if ev.key == pygame.K_ESCAPE: return 'quit'
                 if ev.key in (pygame.K_RETURN, pygame.K_SPACE): return 'select'
+            if ev.type == pygame.JOYBUTTONDOWN:
+                return 'select'
 
         screen.fill(BG)
 
@@ -385,6 +443,11 @@ def screen_level_select():
                 if k in (pygame.K_UP,   pygame.K_w):       sel = (sel - 1) % len(LEVELS)
                 if k in (pygame.K_DOWN, pygame.K_s):       sel = (sel + 1) % len(LEVELS)
                 if k in (pygame.K_RETURN, pygame.K_SPACE): return sel
+            if ev.type == pygame.JOYHATMOTION:
+                if ev.value[1] ==  1: sel = (sel - 1) % len(LEVELS)
+                if ev.value[1] == -1: sel = (sel + 1) % len(LEVELS)
+            if ev.type == pygame.JOYBUTTONDOWN:
+                return sel
 
         screen.fill(BG)
         blit_text(screen, "SELECT  LEVEL", F_BIG, PURPLE, SW//2, 80)
@@ -412,6 +475,7 @@ def screen_level_select():
 def screen_game(level_idx):
     level    = LEVELS[level_idx]
     data     = level['data']
+    sidebar  = level.get('sidebar')
     total_ms = sum(s['duration'] for s in data)
 
     # ── Music ─────────────────────────────────────────────────────────────
@@ -468,6 +532,14 @@ def screen_game(level_idx):
                 player.key_down(ev.key)
             if ev.type == pygame.KEYUP:
                 player.key_up(ev.key)
+            if ev.type == pygame.JOYHATMOTION:
+                pos = HAT_POS.get(ev.value)
+                if pos is not None:
+                    player.pos = pos
+            if ev.type == pygame.JOYAXISMOTION:
+                if ev.axis == 0: _joy_axes[0] = ev.value
+                if ev.axis == 1: _joy_axes[1] = ev.value
+                player.pos = _axes_to_pos()
 
         while seg_idx < len(data) and seg_timer >= data[seg_idx]['duration']:
             seg_timer -= data[seg_idx]['duration']
@@ -516,6 +588,7 @@ def screen_game(level_idx):
         draw_grid(screen, grid, sprites, pulse_t)
         player.draw(screen)
         draw_hud(screen, score, elapsed, total_ms, streak)
+        draw_sidebar(screen, sidebar)
         for p in popups: p.draw(screen)
         pygame.display.flip()
 
@@ -547,8 +620,9 @@ def screen_end(score):
         t += dt
 
         for ev in pygame.event.get():
-            if ev.type == pygame.QUIT: return 'quit'
-            if ev.type == pygame.KEYDOWN: return 'menu'
+            if ev.type == pygame.QUIT:        return 'quit'
+            if ev.type == pygame.KEYDOWN:     return 'menu'
+            if ev.type == pygame.JOYBUTTONDOWN: return 'menu'
 
         screen.fill(BG)
 
