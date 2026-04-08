@@ -72,6 +72,7 @@ def cell_rect(r, c):
 from level_helpers import SAFE, WARN, ATCK
 import level_megalovania
 import level_bigshot
+import level_undyne
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  CONTROLS  (DDR pad mapped to keyboard + joystick)
@@ -170,6 +171,7 @@ def _load_sidebar(filename):
 
 IMG_SANS      = _load_sidebar("sans.png")
 IMG_SPAMTON   = _load_sidebar("spamtonneo.png")
+IMG_UNDYNE    = _load_sidebar("Undyne.png")
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  SOUNDS  (synthesised – no external files needed)
@@ -219,6 +221,14 @@ LEVELS = [
     #    'data':     level_megalovania.build_level(warn_beats=2),
     #    'sidebar':  IMG_SANS,
     #},
+    {
+        'name':     'A Battle Against a True Hero',
+        'subtitle': '150 BPM  \u00b7  40 s  \u00b7  1-beat warn',
+        'bpm':      150,
+        'music':    'BattleAgainstATrueHero.ogg',
+        'data':     level_undyne.build_level(),
+        'sidebar':  IMG_UNDYNE,
+    },
     {
         'name':     '[[BIG SHOT]]',
         'subtitle': '140 BPM  \u00b7  40 s  \u00b7  1-beat warn',
