@@ -463,6 +463,197 @@ def screen_start():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  SCREEN: TUTORIAL
+# ═══════════════════════════════════════════════════════════════════════════
+def screen_tutorial():
+    """3-page tutorial.  Returns 'select' to continue, 'back' for start."""
+    page       = 0
+    PAGE_COUNT = 3
+    t          = 0
+
+    # Page 0 – animated player walking around the grid
+    DEMO_PATH = [
+        (1,1),(0,1),(1,1),(1,2),(1,1),(2,1),(1,1),(1,0),
+        (1,1),(0,0),(1,1),(0,2),(1,1),(2,2),(1,1),(2,0),
+    ]
+    demo_idx   = 0
+    demo_timer = 0
+    DEMO_STEP  = 550   # ms per step
+
+    DIR_LABELS = [
+        ["↖", "↑", "↗"],
+        ["←", "●", "→"],
+        ["↙", "↓", "↘"],
+    ]
+
+    # Scaled heart for the mini-grid
+    MINI  = 110
+    GAP2  = 6
+    H_SZ  = MINI - 30
+    if HEART_LOADED:
+        heart_mini = pygame.transform.smoothscale(HEART_BASE, (H_SZ, H_SZ))
+    else:
+        heart_mini = None
+
+    while True:
+        dt = clock.tick(FPS)
+        t          += dt
+        demo_timer += dt
+        if demo_timer >= DEMO_STEP:
+            demo_timer -= DEMO_STEP
+            demo_idx    = (demo_idx + 1) % len(DEMO_PATH)
+        demo_pos = DEMO_PATH[demo_idx]
+
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                return 'back'
+            if ev.type == pygame.KEYDOWN:
+                k = ev.key
+                if k == pygame.K_ESCAPE:
+                    return 'back'
+                if k in (pygame.K_RIGHT, pygame.K_RETURN, pygame.K_SPACE, pygame.K_d):
+                    if page < PAGE_COUNT - 1:
+                        page += 1
+                    else:
+                        return 'select'
+                if k in (pygame.K_LEFT, pygame.K_a):
+                    page = max(0, page - 1)
+            if ev.type == pygame.JOYHATMOTION:
+                if ev.value[0] ==  1: page = min(PAGE_COUNT - 1, page + 1)
+                if ev.value[0] == -1: page = max(0, page - 1)
+            if ev.type == pygame.JOYBUTTONDOWN:
+                if page < PAGE_COUNT - 1:
+                    page += 1
+                else:
+                    return 'select'
+
+        screen.fill(BG)
+
+        # ── Page dots ────────────────────────────────────────────────────────
+        for pi in range(PAGE_COUNT):
+            cx  = SW // 2 + (pi - PAGE_COUNT // 2) * 30
+            col = WHITE if pi == page else DK_GRAY
+            pygame.draw.circle(screen, col, (cx, 56), 7)
+
+        # ── ESC hint ─────────────────────────────────────────────────────────
+        blit_text(screen, "ESC  Back", F_XS, GRAY, SW - 30, 28, 'topright')
+
+        # ════════════════════════════════════════════════════════════════════
+        if page == 0:
+            # ── PAGE 0: MOVEMENT ─────────────────────────────────────────────
+            blit_text(screen, "MOVEMENT", F_BIG, PURPLE, SW // 2, 108)
+
+            MGW = MINI * 3 + GAP2 * 2
+            MGH = MINI * 3 + GAP2 * 2
+            MGX = (SW - MGW) // 2
+            MGY = (SH - MGH) // 2 - 50
+
+            for r in range(3):
+                for c in range(3):
+                    rx   = MGX + c * (MINI + GAP2)
+                    ry   = MGY + r * (MINI + GAP2)
+                    rect = pygame.Rect(rx, ry, MINI, MINI)
+                    is_p = (r, c) == demo_pos
+                    col  = (60, 48, 100) if is_p else C_SAFE
+                    pygame.draw.rect(screen, col,      rect, border_radius=10)
+                    pygame.draw.rect(screen, C_BORDER, rect, 2,  border_radius=10)
+                    lbl_col = WHITE if is_p else GRAY
+                    blit_text(screen, DIR_LABELS[r][c], F_MED, lbl_col,
+                              rx + MINI // 2, ry + MINI // 2)
+
+            # Heart on demo_pos
+            pr, pc = demo_pos
+            hx = MGX + pc * (MINI + GAP2) + MINI // 2
+            hy = MGY + pr * (MINI + GAP2) + MINI // 2
+            if heart_mini:
+                screen.blit(heart_mini, (hx - H_SZ // 2, hy - H_SZ // 2))
+            else:
+                pygame.draw.circle(screen, C_PLR, (hx, hy), 24)
+
+            blit_text(screen, "Each DDR pad direction moves to that grid square.",
+                      F_SM, WHITE, SW // 2, MGY + MGH + 50)
+            blit_text(screen, "Releasing any direction snaps you back to center.",
+                      F_SM, GRAY,  SW // 2, MGY + MGH + 88)
+
+        # ════════════════════════════════════════════════════════════════════
+        elif page == 1:
+            # ── PAGE 1: WARNINGS & ATTACKS ───────────────────────────────────
+            blit_text(screen, "WARNINGS  &  ATTACKS", F_BIG, PURPLE, SW // 2, 108)
+
+            DC   = 170   # demo cell size
+            DGAP = 90
+            tot  = DC * 3 + DGAP * 2
+            sx   = (SW - tot) // 2
+            cy   = SH // 2 - 20
+
+            demos = [
+                (SAFE, "SAFE",    GREEN, "You're in the clear."),
+                (WARN, "WARNING", GOLD,  "Attack incoming — move soon!"),
+                (ATCK, "ATTACK",  RED,   "Get off this square NOW!"),
+            ]
+            for i, (state, label, col, tip) in enumerate(demos):
+                cx   = sx + i * (DC + DGAP) + DC // 2
+                rect = pygame.Rect(cx - DC // 2, cy - DC // 2, DC, DC)
+
+                if state == SAFE:
+                    cell_col = C_SAFE
+                elif state == WARN:
+                    p        = (math.sin(t * 0.013) + 1) * 0.5
+                    cell_col = tuple(int(C_SAFE[j] + (C_WARN[j] - C_SAFE[j]) * p)
+                                     for j in range(3))
+                else:
+                    p        = (math.sin(t * 0.032) + 1) * 0.5
+                    cell_col = (
+                        min(255, int(C_HIT[0] + 28 * p)),
+                        max(0,   int(C_HIT[1] - 10 * p)),
+                        max(0,   int(C_HIT[2] -  5 * p)),
+                    )
+
+                pygame.draw.rect(screen, cell_col, rect, border_radius=14)
+                pygame.draw.rect(screen, C_BORDER,  rect, 3,  border_radius=14)
+                blit_text(screen, label, F_MED, col, cx, cy + DC // 2 + 36)
+                blit_text(screen, tip,   F_XS,  GRAY, cx, cy + DC // 2 + 76)
+
+            blit_text(screen,
+                      "Squares pulse yellow briefly before an attack, then turn red.",
+                      F_SM, WHITE, SW // 2, SH - 150)
+            blit_text(screen,
+                      "You have a short window after the warning to step away.",
+                      F_SM, GRAY,  SW // 2, SH - 108)
+
+        # ════════════════════════════════════════════════════════════════════
+        elif page == 2:
+            # ── PAGE 2: SCORING & TIPS ───────────────────────────────────────
+            blit_text(screen, "SCORING  &  TIPS", F_BIG, PURPLE, SW // 2, 108)
+
+            score_lines = [
+                ("+1 per frame  on a safe square", GREEN),
+                ("-100          when hit by an attack", RED),
+                ("STREAK        3+ hits dodged in a row", TEAL),
+            ]
+            for i, (txt, col) in enumerate(score_lines):
+                blit_text(screen, txt, F_SM, col, SW // 2, 310 + i * 82)
+
+            tip_lines = [
+                ("Watch the progress bar below the grid — it counts down the song.",
+                 GRAY),
+                ("You can return to the menu mid-level with ESC.", GRAY),
+                ("Good luck!", WHITE),
+            ]
+            for i, (txt, col) in enumerate(tip_lines):
+                blit_text(screen, txt, F_XS, col, SW // 2, 570 + i * 52)
+
+        # ── Navigation hint ──────────────────────────────────────────────────
+        if (t // 500) % 2 == 0:
+            if page < PAGE_COUNT - 1:
+                blit_text(screen, "ENTER / →  Next",  F_SM, WHITE, SW // 2, SH - 46)
+            else:
+                blit_text(screen, "ENTER  Play!", F_MED, WHITE, SW // 2, SH - 46)
+
+        _present()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  SCREEN: LEVEL SELECT
 # ═══════════════════════════════════════════════════════════════════════════
 def screen_level_select():
@@ -687,7 +878,14 @@ def main():
     while True:
         if state == 'start':
             result = screen_start()
-            state  = 'select' if result == 'select' else None
+            if result == 'select': state = 'tutorial'
+            else:                  state = None
+
+        elif state == 'tutorial':
+            result = screen_tutorial()
+            if result == 'select': state = 'select'
+            elif result == 'back': state = 'start'
+            else:                  state = None
 
         elif state == 'select':
             result = screen_level_select()
