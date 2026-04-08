@@ -74,6 +74,7 @@ import level_megalovania
 import level_bigshot
 import level_undyne
 import level_histheme
+import level_blackknife
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  CONTROLS  (DDR pad mapped to keyboard + joystick)
@@ -174,6 +175,7 @@ IMG_SANS      = _load_sidebar("sans.png")
 IMG_SPAMTON   = _load_sidebar("spamtonneo.png")
 IMG_UNDYNE    = _load_sidebar("Undyne.png")
 IMG_ASRIEL    = _load_sidebar("asriel.png")
+IMG_ROARINGKNIGHT = _load_sidebar("RoaringKnight.png")
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  SOUNDS  (synthesised – no external files needed)
@@ -208,28 +210,12 @@ SND_END   = _tone(440, 280, 0.18, [(1, 1.0), (1.25, 0.5), (1.5, 0.25)])
 # ═══════════════════════════════════════════════════════════════════════════
 LEVELS = [
     {
-        'name':     'Megalovania',
-        'subtitle': '120 BPM  \u00b7  40 s  \u00b7  Hard',
-        'bpm':      120,
-        'music':    'Megalovania.ogg',
-        'data':     level_megalovania.build_level(warn_beats=1),
-        'sidebar':  IMG_SANS,
-    },
-    #{
-    #    'name':     'Megalovania Easy Mode',
-    #    'subtitle': '120 BPM  \u00b7  40 s  \u00b7  2-beat warn',
-    #    'bpm':      120,
-    #    'music':    'Megalovania.ogg',
-    #    'data':     level_megalovania.build_level(warn_beats=2),
-    #    'sidebar':  IMG_SANS,
-    #},
-    {
-        'name':     'A Battle Against a True Hero',
-        'subtitle': '150 BPM  \u00b7  40 s  \u00b7  Hard',
-        'bpm':      150,
-        'music':    'BattleAgainstATrueHero.ogg',
-        'data':     level_undyne.build_level(),
-        'sidebar':  IMG_UNDYNE,
+        'name':     'His Theme',
+        'subtitle': '153 BPM  \u00b7  40 s  \u00b7  Easy',
+        'bpm':      153,
+        'music':    'HisTheme.ogg',
+        'data':     level_histheme.build_level(),
+        'sidebar':  IMG_ASRIEL,
     },
     {
         'name':     '[[BIG SHOT]]',
@@ -240,12 +226,28 @@ LEVELS = [
         'sidebar':  IMG_SPAMTON,
     },
     {
-        'name':     'His Theme',
-        'subtitle': '153 BPM  \u00b7  40 s  \u00b7  Easy',
-        'bpm':      153,
-        'music':    'HisTheme.ogg',
-        'data':     level_histheme.build_level(),
-        'sidebar':  IMG_ASRIEL,
+        'name':     'Megalovania',
+        'subtitle': '120 BPM  \u00b7  40 s  \u00b7  Hard',
+        'bpm':      120,
+        'music':    'Megalovania.ogg',
+        'data':     level_megalovania.build_level(warn_beats=1),
+        'sidebar':  IMG_SANS,
+    },
+    {
+        'name':     'A Battle Against a True Hero',
+        'subtitle': '150 BPM  \u00b7  40 s  \u00b7  Hard',
+        'bpm':      150,
+        'music':    'BattleAgainstATrueHero.ogg',
+        'data':     level_undyne.build_level(),
+        'sidebar':  IMG_UNDYNE,
+    },
+    {
+        'name':     'Black Knife',
+        'subtitle': '147.5 BPM  \u00b7  40 s  \u00b7  Insane',
+        'bpm':      147.5,
+        'music':    'BlackKnife.ogg',
+        'data':     level_blackknife.build_level(),
+        'sidebar':  IMG_ROARINGKNIGHT,
     },
 ]
 
