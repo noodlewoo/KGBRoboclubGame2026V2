@@ -56,6 +56,7 @@ def cell_rect(r, c):
 from level_helpers import SAFE, WARN, ATCK
 import level_megalovania
 import level_bigshot
+import level_deathbyglamour
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  CONTROLS  (DDR pad mapped to keyboard)
@@ -162,6 +163,13 @@ LEVELS = [
         'bpm':      140,
         'music':    'BIGSHOT.ogg',
         'data':     level_bigshot.build_level(),
+    },
+    {
+        'name':     'DBG TEST',
+        'subtitle': '148 BPM  \u00b7  40 s  \u00b7  1-beat warn',
+        'bpm':      148,
+        'music':    'death by glamour 40 sec.ogg',
+        'data':     level_deathbyglamour.build_level(warn_beats=1),
     },
 ]
 

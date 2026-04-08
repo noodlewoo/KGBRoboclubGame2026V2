@@ -2,7 +2,21 @@
 #  BIG SHOT LEVEL BUILDER
 # ═══════════════════════════════════════════════════════════════════════════
 from level_helpers import seg, attack, _safe_grid
+import random
 
+#Added this in case we want tile selection to be truly random, think it would be silly
+def pick_tiles(count=3, avoid_center=False):
+    cells = [(r, c) for r in range(3) for c in range(3)]
+
+    if avoid_center:
+        cells.remove((1, 1))
+
+    if count > len(cells):
+        raise ValueError("Not enough cells available with current settings")
+
+    return random.sample(cells, count)
+
+print(pick_tiles(8,True))
 
 def build_level():
     """
