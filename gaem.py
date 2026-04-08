@@ -11,10 +11,25 @@ pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
 pygame.joystick.init()
 
 SW, SH = 1920, 1080
-screen = pygame.display.set_mode((SW, SH))
+
+# Logical canvas – all game code draws here at the design resolution
+screen   = pygame.Surface((SW, SH))
+
+# Fullscreen display – the real window
+_display = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+_DSP_W, _DSP_H = _display.get_size()
 pygame.display.set_caption("Grid Dodge")
 clock  = pygame.time.Clock()
 FPS    = 60
+
+def _present():
+    """Scale the logical canvas to the display, letterboxed, then flip."""
+    scale = min(_DSP_W / SW, _DSP_H / SH)
+    w, h  = int(SW * scale), int(SH * scale)
+    _display.fill((0, 0, 0))
+    _display.blit(pygame.transform.smoothscale(screen, (w, h)),
+                  ((_DSP_W - w) // 2, (_DSP_H - h) // 2))
+    pygame.display.flip()
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  PALETTE
@@ -103,23 +118,24 @@ def _axes_to_pos():
     return CENTER if (row == 1 and col == 1) else (row, col)
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  FONTS
+#  FONTS  (PixelOperator TTF, fallback to pygame default)
 # ═══════════════════════════════════════════════════════════════════════════
+import os as _os
+_FONT_REG  = _os.path.join("pixel_operator", "PixelOperator.ttf")
+_FONT_BOLD = _os.path.join("pixel_operator", "PixelOperator-Bold.ttf")
+
 def _font(size, bold=False):
-    for name in ("Consolas", "Courier New", "monospace"):
-        try:
-            f = pygame.font.SysFont(name, size, bold=bold)
-            if f: return f
-        except Exception:
-            pass
+    path = _FONT_BOLD if bold else _FONT_REG
+    if _os.path.isfile(path):
+        return pygame.font.Font(path, size)
     return pygame.font.Font(None, size)
 
-F_HUGE  = _font(76, True)
-F_GRADE = _font(118, True)
-F_BIG   = _font(50, True)
-F_MED   = _font(34, True)
-F_SM    = _font(23)
-F_XS    = _font(17)
+F_HUGE  = _font(96, True)
+F_GRADE = _font(148, True)
+F_BIG   = _font(64, True)
+F_MED   = _font(44, True)
+F_SM    = _font(30)
+F_XS    = _font(22)
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  PLAYER SPRITE  (heart.png, with circle fallback if file is missing)
@@ -409,23 +425,19 @@ def screen_start():
         blit_text(screen, "KGB x Roboclub", F_HUGE, tc, SW//2, 85)
         blit_text(screen, "Toby Fox Game", F_SM, GRAY, SW//2, 155)
 
-        blit_text(screen, "CONTROLS", F_SM, WHITE, SW//2, SH - 215)
-        for label, (r, c) in [
-            ('U',(0,0)),('I',(0,1)),('O',(0,2)),
-            ('J',(1,0)),('·',(1,1)),('L',(1,2)),
-            ('M',(2,0)),(',', (2,1)),('.',(2,2)),
-        ]:
-            kx = SW//2 - 65 + c * 44
-            ky = SH - 185   + r * 36
-            col = GOLD if label != '·' else GRAY
-            pygame.draw.rect(screen, (28, 22, 48), (kx, ky, 38, 30), border_radius=5)
-            pygame.draw.rect(screen, C_BORDER,     (kx, ky, 38, 30), 1, border_radius=5)
-            blit_text(screen, label, F_SM, col, kx + 19, ky + 15)
+        # ── Controls description ──────────────────────────────────────────
+        for line_i, (txt, col) in enumerate([
+            ("CONTROLS", WHITE),
+            ("Each DDR pad direction maps to a grid square", GRAY),
+            ("Letting go snaps you back to the center square", GRAY),
+        ]):
+            blit_text(screen, txt, F_SM if line_i > 0 else F_BIG, col,
+                      SW//2, SH - 250 + line_i * 52)
 
         if (t // 500) % 2 == 0:
-            blit_text(screen, "PRESS  ENTER  TO  START", F_MED, WHITE, SW//2, SH - 46)
+            blit_text(screen, "PRESS  ENTER  TO  START", F_MED, WHITE, SW//2, SH - 42)
 
-        pygame.display.flip()
+        _present()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -453,20 +465,20 @@ def screen_level_select():
         blit_text(screen, "SELECT  LEVEL", F_BIG, PURPLE, SW//2, 80)
 
         for i, lv in enumerate(LEVELS):
-            y      = 200 + i * 98
+            y      = 220 + i * 120
             is_sel = (i == sel)
             bg     = (48, 38, 78) if is_sel else (22, 17, 38)
-            rect   = pygame.Rect(SW//2 - 230, y - 28, 460, 64)
-            pygame.draw.rect(screen, bg, rect, border_radius=13)
+            rect   = pygame.Rect(SW//2 - 320, y - 36, 640, 84)
+            pygame.draw.rect(screen, bg, rect, border_radius=14)
             if is_sel:
-                pygame.draw.rect(screen, PURPLE, rect, 2, border_radius=13)
+                pygame.draw.rect(screen, PURPLE, rect, 3, border_radius=14)
             col = WHITE if is_sel else GRAY
-            blit_text(screen, lv['name'],     F_MED, col,  SW//2, y - 4)
-            blit_text(screen, lv['subtitle'], F_XS,  GRAY, SW//2, y + 24)
+            blit_text(screen, lv['name'],     F_MED, col,  SW//2, y - 6)
+            blit_text(screen, lv['subtitle'], F_SM,  GRAY, SW//2, y + 32)
 
         blit_text(screen, "↑ ↓  Navigate    ENTER  Select    ESC  Back",
-                  F_XS, GRAY, SW//2, SH - 38)
-        pygame.display.flip()
+                  F_SM, GRAY, SW//2, SH - 44)
+        _present()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -590,7 +602,7 @@ def screen_game(level_idx):
         draw_hud(screen, score, elapsed, total_ms, streak)
         draw_sidebar(screen, sidebar)
         for p in popups: p.draw(screen)
-        pygame.display.flip()
+        _present()
 
     if music_ok: pygame.mixer.music.stop()
     SND_END.play()
@@ -639,7 +651,7 @@ def screen_end(score):
             blit_text(screen, "PRESS  ANY  KEY  to return to menu",
                       F_SM, GRAY, SW//2, SH - 46)
 
-        pygame.display.flip()
+        _present()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
