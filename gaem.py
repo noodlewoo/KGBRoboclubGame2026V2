@@ -2,6 +2,7 @@ import pygame
 import sys
 import math
 import struct
+import random
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  INIT
@@ -78,6 +79,7 @@ import level_undyne
 import level_histheme
 import level_blackknife
 import level_deathbyglamour
+import level_bonetrousle
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  CONTROLS  (DDR pad mapped to keyboard + joystick)
@@ -87,7 +89,7 @@ import level_deathbyglamour
 #   J   L   →   (1,0) (1,2)
 #   M , .   →   (2,0) (2,1) (2,2)
 KEY_POS = {
-    pygame.K_u: (0, 0),                             pygame.K_o: (0, 2),
+    pygame.K_u: (0, 0),  pygame.K_i: (0, 1),    pygame.K_o: (0, 2),
     pygame.K_j: (1, 0),                             pygame.K_l: (1, 2),
     pygame.K_m: (2, 0),  pygame.K_COMMA: (2, 1),   pygame.K_PERIOD: (2, 2),
 }
@@ -185,6 +187,7 @@ IMG_UNDYNE    = _load_sidebar("Undyne.png")
 IMG_ASRIEL    = _load_sidebar("asriel.png")
 IMG_ROARINGKNIGHT = _load_sidebar("RoaringKnight.png")
 IMG_METATON   = _load_sidebar("MettatonEX.png")
+IMG_PAPYRUS   = _load_sidebar("Papyrus_battle.png")
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  SOUNDS  (synthesised – no external files needed)
@@ -218,6 +221,14 @@ SND_END   = _tone(440, 280, 0.18, [(1, 1.0), (1.25, 0.5), (1.5, 0.25)])
 #  LEVEL REGISTRY
 # ═══════════════════════════════════════════════════════════════════════════
 LEVELS = [
+    {
+        'name':     'Bonetrousle',
+        'subtitle': '150 BPM  \u00b7  40 s  \u00b7  Easy',
+        'bpm':      150,
+        'music':    'Bonetrousle.ogg',
+        'data':     level_bonetrousle.build_level(),
+        'sidebar':  IMG_PAPYRUS,
+    },
     {
         'name':     'His Theme',
         'subtitle': '153 BPM  \u00b7  40 s  \u00b7  Easy',
@@ -268,6 +279,25 @@ LEVELS = [
     },
 ]
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  MENU MUSIC
+# ═══════════════════════════════════════════════════════════════════════════
+_MENU_END_EVT = pygame.USEREVENT + 1   # fired when a menu track finishes
+
+def _start_menu_music():
+    """Play StartMenu.ogg, with a 1-in-20 chance of FullMenu.ogg instead.
+    Called once to start, then re-called each time _MENU_END_EVT fires."""
+    track = "FullMenu.ogg" if random.random() < 1 / 20 else "StartMenu.ogg"
+    import os
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), track)
+    try:
+        pygame.mixer.music.set_endevent(_MENU_END_EVT)
+        pygame.mixer.music.load(path)
+        pygame.mixer.music.set_volume(0.75)
+        pygame.mixer.music.play()
+    except (pygame.error, FileNotFoundError):
+        pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -483,6 +513,8 @@ def screen_start():
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 return 'quit'
+            if ev.type == _MENU_END_EVT:
+                _start_menu_music()
             if ev.type == pygame.KEYDOWN:
                 if ev.key == pygame.K_ESCAPE: return 'quit'
                 if ev.key == pygame.K_1: return 'select'
@@ -563,6 +595,8 @@ def screen_tutorial():
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 return 'back'
+            if ev.type == _MENU_END_EVT:
+                _start_menu_music()
             if ev.type == pygame.KEYDOWN:
                 k = ev.key
                 if k == pygame.K_3:
@@ -620,6 +654,8 @@ def screen_tutorial():
                       F_SM, WHITE, SW // 2, MGY + MGH + 50)
             blit_text(screen, "Releasing any direction snaps you back to center.",
                       F_SM, GRAY,  SW // 2, MGY + MGH + 88)
+            blit_text(screen, "If multiple buttons are held, the last one pressed wins.",
+                      F_SM, GRAY,  SW // 2, MGY + MGH + 126)
 
         # ════════════════════════════════════════════════════════════════════
         elif page == 1:
@@ -706,6 +742,7 @@ def screen_level_select():
         dt = clock.tick(FPS)
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT: return 'back'
+            if ev.type == _MENU_END_EVT: _start_menu_music()
             if ev.type == pygame.KEYDOWN:
                 k = ev.key
                 if k == pygame.K_3: return 'back'
@@ -745,6 +782,7 @@ def screen_game(level_idx):
     # Place the music file in the same folder as this script.
     # .m4a support depends on your SDL_mixer build. If it fails, convert to
     # .ogg (ffmpeg -i "file.m4a" "file.ogg") and update the 'music' key.
+    pygame.mixer.music.set_endevent(0)   # suppress menu-loop event during gameplay
     import os
     music_file = level.get('music', '')
     music_ok   = False
@@ -899,8 +937,9 @@ def screen_end(score):
         t += dt
 
         for ev in pygame.event.get():
-            if ev.type == pygame.QUIT:    return 'quit'
-            if ev.type == pygame.KEYDOWN: return 'menu'
+            if ev.type == pygame.QUIT:      return 'quit'
+            if ev.type == _MENU_END_EVT:    _start_menu_music()
+            if ev.type == pygame.KEYDOWN:   return 'menu'
 
         screen.fill(BG)
 
@@ -928,6 +967,8 @@ def main():
     level_idx  = 0
     last_score = 0
 
+    _start_menu_music()
+
     while True:
         if state == 'start':
             result = screen_start()
@@ -952,6 +993,7 @@ def main():
 
         elif state == 'game':
             last_score, result = screen_game(level_idx)
+            _start_menu_music()
             if result == 'end':    state = 'end'
             elif result == 'back': state = 'start'
             else:                  state = None
