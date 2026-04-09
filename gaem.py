@@ -36,6 +36,7 @@ def _present():
 # ═══════════════════════════════════════════════════════════════════════════
 BG        = ( 12,   9,  22)
 C_SAFE    = ( 32,  26,  55)
+C_SAFE_GRN= ( 30,  90,  50)
 C_WARN    = (195, 138,   8)
 C_HIT     = (188,  34,  34)
 C_BORDER  = ( 68,  56, 108)
@@ -79,13 +80,14 @@ import level_blackknife
 # ═══════════════════════════════════════════════════════════════════════════
 #  CONTROLS  (DDR pad mapped to keyboard + joystick)
 # ═══════════════════════════════════════════════════════════════════════════
-#   U I O   →   (0,0) (0,1) (0,2)
-#   J   L   →   (1,0)       (1,2)
+# Keys map directly to a fixed grid cell; releasing snaps back to center.
+#   U   O   →   (0,0) (0,2)
+#   J   L   →   (1,0) (1,2)
 #   M , .   →   (2,0) (2,1) (2,2)
 KEY_POS = {
-    pygame.K_u: (0, 0),   pygame.K_i: (0, 1),   pygame.K_o: (0, 2),
-    pygame.K_j: (1, 0),                           pygame.K_l: (1, 2),
-    pygame.K_m: (2, 0),   pygame.K_COMMA: (2, 1), pygame.K_PERIOD: (2, 2),
+    pygame.K_u: (0, 0),                             pygame.K_o: (0, 2),
+    pygame.K_j: (1, 0),                             pygame.K_l: (1, 2),
+    pygame.K_m: (2, 0),  pygame.K_COMMA: (2, 1),   pygame.K_PERIOD: (2, 2),
 }
 CENTER = (1, 1)
 
@@ -99,25 +101,29 @@ for _i in range(pygame.joystick.get_count()):
 
 # Hat → grid cell.  SDL hat: X -1=left 1=right, Y -1=down 1=up
 HAT_POS = {
-    (-1,  1): (0, 0),  # up-left
-    ( 0,  1): (0, 1),  # up
-    ( 1,  1): (0, 2),  # up-right
-    (-1,  0): (1, 0),  # left
-    ( 1,  0): (1, 2),  # right
-    (-1, -1): (2, 0),  # down-left
-    ( 0, -1): (2, 1),  # down
-    ( 1, -1): (2, 2),  # down-right
-    ( 0,  0): CENTER,
+    (-1,  1): (0, 0),  (-1,  0): (1, 0),  (-1, -1): (2, 0),
+    ( 0,  1): (0, 1),  ( 0,  0): CENTER,  ( 0, -1): (2, 1),
+    ( 1,  1): (0, 2),  ( 1,  0): (1, 2),  ( 1, -1): (2, 2),
 }
 
-# Axis fallback (for adapters that report as axes instead of a hat)
-_joy_axes  = [0.0, 0.0]   # [x, y]
-_AX_DEAD   = 0.5
+# Button → grid cell (DDR pad read as PlayStation controller)
+BTN_POS = {
+    4:  (0, 1),  13: (0, 0),  14: (0, 2),
+    7:  (1, 0),   5: (1, 2),
+    15: (2, 0),   6: (2, 1),  12: (2, 2),
+}
 
-def _axes_to_pos():
+_joy_axes    = [0.0, 0.0]   # [x, y]
+_AX_DEAD     = 0.5
+
+def _axis_zone_from_values():
     x, y = _joy_axes
     row = 1 if abs(y) < _AX_DEAD else (0 if y < 0 else 2)
     col = 1 if abs(x) < _AX_DEAD else (0 if x < 0 else 2)
+    return row, col
+
+def _axes_to_pos():
+    row, col = _axis_zone_from_values()
     return CENTER if (row == 1 and col == 1) else (row, col)
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -257,11 +263,22 @@ LEVELS = [
 #  PLAYER
 # ═══════════════════════════════════════════════════════════════════════════
 class Player:
+    MOVE_SPEED = 1400   # pixels per second for smooth glide
+
     def __init__(self):
         self.pos   = CENTER
         self.held  = []
         self.flash = 0
         self.glow  = 0
+        r, c = CENTER
+        _r = cell_rect(r, c)
+        self.px = float(_r.centerx)
+        self.py = float(_r.centery)
+
+    def _target_pixel(self):
+        r, c = self.pos
+        rect = cell_rect(r, c)
+        return float(rect.centerx), float(rect.centery)
 
     def key_down(self, key):
         if key in KEY_POS and key not in self.held:
@@ -276,6 +293,15 @@ class Player:
     def update(self, dt):
         self.flash = max(0, self.flash - dt)
         self.glow  = max(0, self.glow  - dt)
+        tx, ty = self._target_pixel()
+        dx, dy = tx - self.px, ty - self.py
+        dist   = math.hypot(dx, dy)
+        step   = self.MOVE_SPEED * dt / 1000.0
+        if dist <= step:
+            self.px, self.py = tx, ty
+        else:
+            self.px += dx / dist * step
+            self.py += dy / dist * step
 
     @property
     def tint(self):
@@ -284,9 +310,7 @@ class Player:
         return C_PLR
 
     def draw(self, surf):
-        r, c   = self.pos
-        rect   = cell_rect(r, c)
-        cx, cy = rect.centerx, rect.centery
+        cx, cy = int(self.px), int(self.py)
 
         if HEART_LOADED:
             half = _HEART_PX // 2
@@ -349,17 +373,27 @@ def blit_text(surf, text, font, color, cx, cy, anchor='center'):
     return rect
 
 
-def draw_grid(surf, grid, sprites, t_ms):
+def draw_grid(surf, grid, sprites, t_ms, pre_atk=None):
+    pre_atk    = pre_atk or set()
+    any_danger = any(grid[r][c] in (WARN, ATCK) for r in range(3) for c in range(3))
     for r in range(3):
         for c in range(3):
             rect  = cell_rect(r, c)
             state = grid[r][c]
 
             if state == SAFE:
-                col = C_SAFE
+                col = C_SAFE_GRN if any_danger else C_SAFE
             elif state == WARN:
-                p   = (math.sin(t_ms * 0.013) + 1) * 0.5
-                col = tuple(int(C_SAFE[i] + (C_WARN[i] - C_SAFE[i]) * p) for i in range(3))
+                if (r, c) in pre_atk:
+                    # Pulse from yellow toward red as the attack approaches
+                    p   = (math.sin(t_ms * 0.06) + 1) * 0.5
+                    col = (
+                        min(255, int(C_WARN[0] + (C_HIT[0] - C_WARN[0]) * p)),
+                        max(0,   int(C_WARN[1] + (C_HIT[1] - C_WARN[1]) * p)),
+                        max(0,   int(C_WARN[2] + (C_HIT[2] - C_WARN[2]) * p)),
+                    )
+                else:
+                    col = C_WARN
             else:
                 p   = (math.sin(t_ms * 0.032) + 1) * 0.5
                 col = (
@@ -596,11 +630,9 @@ def screen_tutorial():
                 rect = pygame.Rect(cx - DC // 2, cy - DC // 2, DC, DC)
 
                 if state == SAFE:
-                    cell_col = C_SAFE
+                    cell_col = C_SAFE_GRN
                 elif state == WARN:
-                    p        = (math.sin(t * 0.013) + 1) * 0.5
-                    cell_col = tuple(int(C_SAFE[j] + (C_WARN[j] - C_SAFE[j]) * p)
-                                     for j in range(3))
+                    cell_col = C_WARN
                 else:
                     p        = (math.sin(t * 0.032) + 1) * 0.5
                     cell_col = (
@@ -754,13 +786,21 @@ def screen_game(level_idx):
                 if ev.key == pygame.K_ESCAPE:
                     if music_ok: pygame.mixer.music.stop()
                     return score, 'back'
-                player.key_down(ev.key)
+                else:
+                    player.key_down(ev.key)
             if ev.type == pygame.KEYUP:
                 player.key_up(ev.key)
             if ev.type == pygame.JOYHATMOTION:
                 pos = HAT_POS.get(ev.value)
                 if pos is not None:
                     player.pos = pos
+            if ev.type == pygame.JOYBUTTONDOWN:
+                pos = BTN_POS.get(ev.button)
+                if pos is not None:
+                    player.pos = pos
+            if ev.type == pygame.JOYBUTTONUP:
+                if ev.button in BTN_POS:
+                    player.pos = CENTER
             if ev.type == pygame.JOYAXISMOTION:
                 if ev.axis == 0: _joy_axes[0] = ev.value
                 if ev.axis == 1: _joy_axes[1] = ev.value
@@ -776,6 +816,17 @@ def screen_game(level_idx):
         cur     = data[seg_idx]
         grid    = cur['grid']
         sprites = cur['sprites']
+
+        # Cells currently WARN that will become ATCK next segment
+        pre_atk = set()
+        if seg_idx + 1 < len(data):
+            next_grid  = data[seg_idx + 1]['grid']
+            time_ratio = seg_timer / max(1, cur['duration'])
+            if time_ratio > 0.5:   # only flash in the second half of the warn beat
+                for _r in range(3):
+                    for _c in range(3):
+                        if grid[_r][_c] == WARN and next_grid[_r][_c] == ATCK:
+                            pre_atk.add((_r, _c))
 
         for r in range(3):
             for c in range(3):
@@ -810,7 +861,7 @@ def screen_game(level_idx):
         popups = [p for p in popups if p.alive]
 
         screen.fill(BG)
-        draw_grid(screen, grid, sprites, pulse_t)
+        draw_grid(screen, grid, sprites, pulse_t, pre_atk)
         player.draw(screen)
         draw_hud(screen, score, elapsed, total_ms, streak)
         draw_sidebar(screen, sidebar)
