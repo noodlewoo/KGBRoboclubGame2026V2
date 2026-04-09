@@ -12,9 +12,11 @@
     in {
       default = pkgs.mkShell {
         packages = with pkgs; [
+          uv
+
+          # for pygame
           libx11
           SDL2
-          uv
         ];
       };
     });
