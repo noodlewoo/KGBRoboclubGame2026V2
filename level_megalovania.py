@@ -1,126 +1,123 @@
 # ═══════════════════════════════════════════════════════════════════════════
-#  MEGALOVANIA LEVEL BUILDER  (shared by both Megalovania entries)
+#  MEGALOVANIA LEVEL BUILDER
 # ═══════════════════════════════════════════════════════════════════════════
-from level_helpers import (
-    GOLD, ORANGE, TEAL, PURPLE,
-    seg, attack, mk_sprite,
-    _safe_grid,
-)
+from level_helpers import seg, attack, _safe_grid, _warn_grid, _hit_grid
 
 
-def build_level(warn_beats):
+def build_level(warn_beats=1):
     """
     120 BPM · 40 seconds · Megalovania.ogg
 
-    Structure:
-      0 – 15 s  single-line attacks (rows, columns, diagonals)
-     15 – 40 s  combined-line attacks, nearly all hitting center
+    Phase 1  ( 0–15 s):
+      – First 4 attacks: single center lines in each direction
+          (center row, top-right diagonal, center col, top-left diagonal)
+      – Remaining slots: alternating row+col cross and diagonal cross
 
-    warn_beats : 1 → 500 ms warn   (normal)
-                 2 → 1000 ms warn  (easy mode)
+    Phase 2a (15–25 s):
+      – Alternates between a cross attack and a 2-adjacent-row/col attack
+
+    Phase 2b (25–40 s):
+      – Two sweeps (clockwise then counterclockwise).
+        Each sweep: all 8 WARN frames back-to-back (safe cell rotates around
+        the edge), then all 8 HIT frames back-to-back.
+        Only 1 edge cell is safe at a time; all other 8 squares are danger.
     """
     BT    = 500              # ms per beat @ 120 BPM
     W     = BT * warn_beats  # warn duration
     H     = 200              # hit duration
-    TOTAL = W + BT           # slot = warn + 1 beat (hit 200 ms + rest 300 ms)
+    TOTAL = W + BT           # attack slot duration
 
-    # ── Named lines ─────────────────────────────────────────────────────────
+    # ── Named lines ──────────────────────────────────────────────────────────
     RT = [(0,0),(0,1),(0,2)]   # row top
     RM = [(1,0),(1,1),(1,2)]   # row mid
     RB = [(2,0),(2,1),(2,2)]   # row bot
     CL = [(0,0),(1,0),(2,0)]   # col left
     CM = [(0,1),(1,1),(2,1)]   # col mid
     CR = [(0,2),(1,2),(2,2)]   # col right
-    DM = [(0,0),(1,1),(2,2)]   # diagonal  ↘
-    DA = [(0,2),(1,1),(2,0)]   # anti-diag ↙
+    DM = [(0,0),(1,1),(2,2)]   # diagonal top-left  ↘
+    DA = [(0,2),(1,1),(2,0)]   # diagonal top-right ↙
+
+    ALL9 = [(r, c) for r in range(3) for c in range(3)]
 
     def u(*lines):
-        """Union of cell lists in first-seen order."""
         seen = set(); out = []
         for line in lines:
-            for c in line:
-                if c not in seen: seen.add(c); out.append(c)
+            for cell in line:
+                if cell not in seen: seen.add(cell); out.append(cell)
         return out
 
-    def sp(cells, label, color=GOLD):
-        return [mk_sprite(cells, color, label, 185)]
-
-    def atk(*cells, spr=None):
-        return attack(TOTAL, *cells, warn_ms=W, hit_ms=H, sprites=spr)
+    def atk(*cells):
+        return attack(TOTAL, *cells, warn_ms=W, hit_ms=H)
 
     segs = []
     add  = segs.extend
 
-    # ── PHASE 1: single-line attacks  (0 – 15 s) ────────────────────────────
-    # slots available: 15 000 // TOTAL  → 15 @ 1-beat warn, 10 @ 2-beat warn
+    # ── PHASE 1: 0–15 s ──────────────────────────────────────────────────────
+    single_4   = [RM, DA, CM, DM]
+    cross_pair = [u(RM, CM), u(DM, DA)]   # alternates after the single 4
+
     p1_n = 15_000 // TOTAL
-    p1 = [
-        (RT, sp(RT, '→')),
-        (RB, sp(RB, '→')),
-        (CL, sp(CL, '↓')),
-        (CR, sp(CR, '↓')),
-        (RM, sp(RM, '→', TEAL)),
-        (CM, sp(CM, '↓', TEAL)),
-        (DM, sp(DM, '↘', ORANGE)),
-        (DA, sp(DA, '↙', ORANGE)),
-        (RT, sp(RT, '→', PURPLE)),
-        (RB, sp(RB, '→', PURPLE)),
-        (CL, sp(CL, '↓', PURPLE)),
-        (CR, sp(CR, '↓', PURPLE)),
-        (DM, sp(DM, '↘', TEAL)),
-        (DA, sp(DA, '↙', TEAL)),
-        (RM, sp(RM, '→')),
-    ]
-    for cells, spr in p1[:p1_n]:
-        add(atk(*cells, spr=spr))
+    for i in range(p1_n):
+        if i < 4:
+            add(atk(*single_4[i]))
+        else:
+            add(atk(*cross_pair[(i - 4) % 2]))
+
     used = p1_n * TOTAL
     if used < 15_000:
         segs.append(seg(15_000 - used, _safe_grid()))
 
-    # ── PHASE 2a: combined-line ramp-up  (15 – 25 s) ────────────────────────
-    # All but the first attack hit center (1,1).  3+ safe squares allowed.
-    p2a = [
-        u(RT, RB),
-        u(DM, DA),
-        u(DM, DA, RT),
-        u(DM, DA, RB),
-        u(RT, RM),
-        u(DM, DA, CL),
-        u(DM, DA, CR),
-        u(RT, RB, CM),
-        u(CL, CR, RM),
-        u(DM, DA, CM),
-    ]
+    # ── PHASE 2a: 15–25 s ────────────────────────────────────────────────────
+    # Even indices → cross attack (alternates between the two cross types)
+    # Odd  indices → adjacent pair (cycles through the four combos)
+    p2a_crosses  = [u(RM, CM), u(DM, DA)]
+    p2a_adjacent = [u(RT, RM), u(CL, CM), u(RM, RB), u(CM, CR)]
+
     p2a_n = 10_000 // TOTAL
-    for cells in p2a[:p2a_n]:
-        add(atk(*cells))
+    cross_i = adj_i = 0
+    for i in range(p2a_n):
+        if i % 2 == 0:
+            add(atk(*p2a_crosses[cross_i % 2]))
+            cross_i += 1
+        else:
+            add(atk(*p2a_adjacent[adj_i % 4]))
+            adj_i += 1
+
     used = p2a_n * TOTAL
     if used < 10_000:
         segs.append(seg(10_000 - used, _safe_grid()))
 
-    # ── PHASE 2b: high-intensity  (25 – 40 s) ───────────────────────────────
-    # All attacks hit center.  Only 1–2 safe squares, always corners or sides.
-    p2b = [
-        u(RT, RB, CM),
-        u(CL, CR, RM),
-        u(DM, DA, CM),
-        u(RT, RB, DM),
-        u(DM, DA, RT, CL),
-        u(DM, DA, RB, CR),
-        u(DM, DA, RT, CR),
-        u(DM, DA, RB, CL),
-        u(RT, RB, CM, CR),
-        u(RT, RB, CM, CL),
-        u(RB, RM, CL, CR),
-        u(RT, RM, CL, CR),
-        u(RB, RM, CR, CM),
-        u(RB, RM, CL, CM),
-        u(RT, RM, CR, CM),
-        u(RT, RM, CL, CM),
-    ]
-    p2b_n = 15_000 // TOTAL
-    for cells in p2b[:p2b_n]:
-        add(atk(*cells))
+    # ── PHASE 2b: 25–40 s · single clockwise spiral ──────────────────────────
+    # 8 steps around the edge. All 8 WARN frames play first so the player can
+    # read the full rotation, then all 8 HIT frames follow.
+    # WARN_DUR = HIT_DUR, computed to fill exactly the remaining time.
+    #   spiral_ms = 8×WARN + 8×(HIT+REST)  →  D = (spiral_ms - 8×REST) / 16
+
+    REST_DUR  = 200
+    spiral_ms = 40_000 - sum(s['duration'] for s in segs)
+    D         = (spiral_ms - 8 * REST_DUR) // 16
+    WARN_DUR  = D
+    HIT_DUR   = D
+
+    CW = [(2,1),(2,2),(1,2),(0,2),(0,1),(0,0),(1,0),(2,0)]  # clockwise
+
+    def sweep(safe_order):
+        result = []
+        n = len(safe_order)
+        # Each step: two consecutive edge cells are safe
+        safe_pairs = [(safe_order[i], safe_order[(i + 1) % n]) for i in range(n)]
+        # All warns first
+        for pair in safe_pairs:
+            danger = [c for c in ALL9 if c not in pair]
+            result.append(seg(WARN_DUR, _warn_grid(*danger)))
+        # All hits after
+        for pair in safe_pairs:
+            danger = [c for c in ALL9 if c not in pair]
+            result.append(seg(HIT_DUR,  _hit_grid(*danger)))
+            result.append(seg(REST_DUR, _safe_grid()))
+        return result
+
+    add(sweep(CW))
 
     # Pad to exactly 40 s
     total = sum(s['duration'] for s in segs)

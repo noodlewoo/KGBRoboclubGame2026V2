@@ -31,9 +31,9 @@ def build_level():
     Phase 4: 27–40 s  intense (7–8 cells)  ← difficulty amp
     """
     BT    = round(60_000 / 140)   # 429 ms per beat @ 140 BPM
-    W     = BT                     # 1-beat warn
+    W     = 2 * BT                 # 2-beat warn
     H     = 200
-    TOTAL = W + BT                 # 2 beats per slot (~858 ms)
+    TOTAL = W + BT                 # 3 beats per slot (~1286 ms)
 
     def atk(*cells):
         return attack(TOTAL, *cells, warn_ms=W, hit_ms=H)

@@ -8,20 +8,38 @@ import struct
 # ═══════════════════════════════════════════════════════════════════════════
 pygame.init()
 pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
+pygame.joystick.init()
 
 SW, SH = 1920, 1080
-screen = pygame.display.set_mode((SW, SH))
+
+# Logical canvas – all game code draws here at the design resolution
+screen   = pygame.Surface((SW, SH))
+
+# Fullscreen display – the real window
+_display = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+_DSP_W, _DSP_H = _display.get_size()
 pygame.display.set_caption("Grid Dodge")
 clock  = pygame.time.Clock()
 FPS    = 60
+
+def _present():
+    """Scale the logical canvas to the display, letterboxed, then flip."""
+    scale = min(_DSP_W / SW, _DSP_H / SH)
+    w, h  = int(SW * scale), int(SH * scale)
+    _display.fill((0, 0, 0))
+    _display.blit(pygame.transform.smoothscale(screen, (w, h)),
+                  ((_DSP_W - w) // 2, (_DSP_H - h) // 2))
+    pygame.display.flip()
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  PALETTE
 # ═══════════════════════════════════════════════════════════════════════════
 BG        = ( 12,   9,  22)
 C_SAFE    = ( 32,  26,  55)
-C_WARN    = (195, 138,   8)
-C_HIT     = (188,  34,  34)
+C_SAFE_GRN= ( 30,  90,  50)
+C_WARN      = (195, 138,   8)
+C_FAKE_WARN = (  0, 200, 220)
+C_HIT       = (188,  34,  34)
 C_BORDER  = ( 68,  56, 108)
 C_PLR     = (110, 225, 255)
 C_PLR_HIT = (255,  85,  85)
@@ -53,42 +71,81 @@ def cell_rect(r, c):
 # ═══════════════════════════════════════════════════════════════════════════
 #  SQUARE STATES  (imported from level_helpers so level files share them)
 # ═══════════════════════════════════════════════════════════════════════════
-from level_helpers import SAFE, WARN, ATCK
+from level_helpers import SAFE, WARN, ATCK, FAKE_WARN
 import level_megalovania
 import level_bigshot
-import level_deathbyglamour
+import level_undyne
+import level_histheme
+import level_blackknife
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  CONTROLS  (DDR pad mapped to keyboard)
+#  CONTROLS  (DDR pad mapped to keyboard + joystick)
 # ═══════════════════════════════════════════════════════════════════════════
-#   U I O   →   (0,0) (0,1) (0,2)
-#   J   L   →   (1,0)       (1,2)
+# Keys map directly to a fixed grid cell; releasing snaps back to center.
+#   U   O   →   (0,0) (0,2)
+#   J   L   →   (1,0) (1,2)
 #   M , .   →   (2,0) (2,1) (2,2)
 KEY_POS = {
-    pygame.K_u: (0, 0),   pygame.K_i: (0, 1),   pygame.K_o: (0, 2),
-    pygame.K_j: (1, 0),                           pygame.K_l: (1, 2),
-    pygame.K_m: (2, 0),   pygame.K_COMMA: (2, 1), pygame.K_PERIOD: (2, 2),
+    pygame.K_u: (0, 0),                             pygame.K_o: (0, 2),
+    pygame.K_j: (1, 0),                             pygame.K_l: (1, 2),
+    pygame.K_m: (2, 0),  pygame.K_COMMA: (2, 1),   pygame.K_PERIOD: (2, 2),
 }
 CENTER = (1, 1)
 
+# ── Joystick setup ───────────────────────────────────────────────────────────
+_joysticks = []
+for _i in range(pygame.joystick.get_count()):
+    _j = pygame.joystick.Joystick(_i)
+    _j.init()
+    _joysticks.append(_j)
+    print(f"[JOY] Found: {_j.get_name()}")
+
+# Hat → grid cell.  SDL hat: X -1=left 1=right, Y -1=down 1=up
+HAT_POS = {
+    (-1,  1): (0, 0),  (-1,  0): (1, 0),  (-1, -1): (2, 0),
+    ( 0,  1): (0, 1),  ( 0,  0): CENTER,  ( 0, -1): (2, 1),
+    ( 1,  1): (0, 2),  ( 1,  0): (1, 2),  ( 1, -1): (2, 2),
+}
+
+# Button → grid cell (DDR pad read as PlayStation controller)
+BTN_POS = {
+    4:  (0, 1),  13: (0, 0),  14: (0, 2),
+    7:  (1, 0),   5: (1, 2),
+    15: (2, 0),   6: (2, 1),  12: (2, 2),
+}
+
+_joy_axes    = [0.0, 0.0]   # [x, y]
+_AX_DEAD     = 0.5
+
+def _axis_zone_from_values():
+    x, y = _joy_axes
+    row = 1 if abs(y) < _AX_DEAD else (0 if y < 0 else 2)
+    col = 1 if abs(x) < _AX_DEAD else (0 if x < 0 else 2)
+    return row, col
+
+def _axes_to_pos():
+    row, col = _axis_zone_from_values()
+    return CENTER if (row == 1 and col == 1) else (row, col)
+
 # ═══════════════════════════════════════════════════════════════════════════
-#  FONTS
+#  FONTS  (PixelOperator TTF, fallback to pygame default)
 # ═══════════════════════════════════════════════════════════════════════════
+import os as _os
+_FONT_REG  = _os.path.join("pixel_operator", "PixelOperator.ttf")
+_FONT_BOLD = _os.path.join("pixel_operator", "PixelOperator-Bold.ttf")
+
 def _font(size, bold=False):
-    for name in ("Consolas", "Courier New", "monospace"):
-        try:
-            f = pygame.font.SysFont(name, size, bold=bold)
-            if f: return f
-        except Exception:
-            pass
+    path = _FONT_BOLD if bold else _FONT_REG
+    if _os.path.isfile(path):
+        return pygame.font.Font(path, size)
     return pygame.font.Font(None, size)
 
-F_HUGE  = _font(76, True)
-F_GRADE = _font(118, True)
-F_BIG   = _font(50, True)
-F_MED   = _font(34, True)
-F_SM    = _font(23)
-F_XS    = _font(17)
+F_HUGE  = _font(96, True)
+F_GRADE = _font(148, True)
+F_BIG   = _font(64, True)
+F_MED   = _font(44, True)
+F_SM    = _font(30)
+F_XS    = _font(22)
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  PLAYER SPRITE  (heart.png, with circle fallback if file is missing)
@@ -110,6 +167,22 @@ try:
 except (pygame.error, FileNotFoundError):
     HEART_BASE = HEART_HIT = HEART_DGD = None
     HEART_LOADED = False
+
+# ── Sidebar character images ─────────────────────────────────────────────────
+def _load_sidebar(filename):
+    try:
+        raw = pygame.image.load(filename).convert_alpha()
+        h   = GH
+        w   = int(raw.get_width() * h / raw.get_height())
+        return pygame.transform.smoothscale(raw, (w, h))
+    except (pygame.error, FileNotFoundError):
+        return None
+
+IMG_SANS      = _load_sidebar("sans.png")
+IMG_SPAMTON   = _load_sidebar("spamtonneo.png")
+IMG_UNDYNE    = _load_sidebar("Undyne.png")
+IMG_ASRIEL    = _load_sidebar("asriel.png")
+IMG_ROARINGKNIGHT = _load_sidebar("RoaringKnight.png")
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  SOUNDS  (synthesised – no external files needed)
@@ -144,32 +217,44 @@ SND_END   = _tone(440, 280, 0.18, [(1, 1.0), (1.25, 0.5), (1.5, 0.25)])
 # ═══════════════════════════════════════════════════════════════════════════
 LEVELS = [
     {
-        'name':     'Megalovania',
-        'subtitle': '120 BPM  \u00b7  40 s  \u00b7  1-beat warn',
-        'bpm':      120,
-        'music':    'Megalovania.ogg',
-        'data':     level_megalovania.build_level(warn_beats=1),
+        'name':     'His Theme',
+        'subtitle': '153 BPM  \u00b7  40 s  \u00b7  Easy',
+        'bpm':      153,
+        'music':    'HisTheme.ogg',
+        'data':     level_histheme.build_level(),
+        'sidebar':  IMG_ASRIEL,
     },
     {
-        'name':     'Megalovania Easy Mode',
-        'subtitle': '120 BPM  \u00b7  40 s  \u00b7  2-beat warn',
-        'bpm':      120,
-        'music':    'Megalovania.ogg',
-        'data':     level_megalovania.build_level(warn_beats=2),
+        'name':     'Black Knife',
+        'subtitle': '147.5 BPM  \u00b7  40 s  \u00b7  Easy',
+        'bpm':      147.5,
+        'music':    'BlackKnife.ogg',
+        'data':     level_blackknife.build_level(),
+        'sidebar':  IMG_ROARINGKNIGHT,
     },
     {
         'name':     '[[BIG SHOT]]',
-        'subtitle': '140 BPM  \u00b7  40 s  \u00b7  1-beat warn',
+        'subtitle': '140 BPM  \u00b7  40 s  \u00b7  Medium',
         'bpm':      140,
         'music':    'BIGSHOT.ogg',
         'data':     level_bigshot.build_level(),
+        'sidebar':  IMG_SPAMTON,
     },
     {
-        'name':     'DBG TEST',
-        'subtitle': '148 BPM  \u00b7  40 s  \u00b7  1-beat warn',
-        'bpm':      148,
-        'music':    'death by glamour 40 sec.ogg',
-        'data':     level_deathbyglamour.build_level(warn_beats=1),
+        'name':     'Megalovania',
+        'subtitle': '120 BPM  \u00b7  40 s  \u00b7  Hard',
+        'bpm':      120,
+        'music':    'Megalovania.ogg',
+        'data':     level_megalovania.build_level(warn_beats=2),
+        'sidebar':  IMG_SANS,
+    },
+    {
+        'name':     'A Battle Against a True Hero',
+        'subtitle': '150 BPM  \u00b7  40 s  \u00b7  Hard',
+        'bpm':      150,
+        'music':    'BattleAgainstATrueHero.ogg',
+        'data':     level_undyne.build_level(),
+        'sidebar':  IMG_UNDYNE,
     },
 ]
 
@@ -179,11 +264,23 @@ LEVELS = [
 #  PLAYER
 # ═══════════════════════════════════════════════════════════════════════════
 class Player:
+    MOVE_SPEED = 1400   # pixels per second for smooth glide
+
     def __init__(self):
-        self.pos   = CENTER
-        self.held  = []
+        self.pos        = CENTER
+        self.held       = []
+        self.held_btns  = []
         self.flash = 0
         self.glow  = 0
+        r, c = CENTER
+        _r = cell_rect(r, c)
+        self.px = float(_r.centerx)
+        self.py = float(_r.centery)
+
+    def _target_pixel(self):
+        r, c = self.pos
+        rect = cell_rect(r, c)
+        return float(rect.centerx), float(rect.centery)
 
     def key_down(self, key):
         if key in KEY_POS and key not in self.held:
@@ -195,9 +292,28 @@ class Player:
             self.held.remove(key)
             self.pos = KEY_POS[self.held[-1]] if self.held else CENTER
 
+    def joy_down(self, btn):
+        if btn in BTN_POS and btn not in self.held_btns:
+            self.held_btns.append(btn)
+            self.pos = BTN_POS[btn]
+
+    def joy_up(self, btn):
+        if btn in self.held_btns:
+            self.held_btns.remove(btn)
+            self.pos = BTN_POS[self.held_btns[-1]] if self.held_btns else CENTER
+
     def update(self, dt):
         self.flash = max(0, self.flash - dt)
         self.glow  = max(0, self.glow  - dt)
+        tx, ty = self._target_pixel()
+        dx, dy = tx - self.px, ty - self.py
+        dist   = math.hypot(dx, dy)
+        step   = self.MOVE_SPEED * dt / 1000.0
+        if dist <= step:
+            self.px, self.py = tx, ty
+        else:
+            self.px += dx / dist * step
+            self.py += dy / dist * step
 
     @property
     def tint(self):
@@ -206,9 +322,7 @@ class Player:
         return C_PLR
 
     def draw(self, surf):
-        r, c   = self.pos
-        rect   = cell_rect(r, c)
-        cx, cy = rect.centerx, rect.centery
+        cx, cy = int(self.px), int(self.py)
 
         if HEART_LOADED:
             half = _HEART_PX // 2
@@ -271,17 +385,29 @@ def blit_text(surf, text, font, color, cx, cy, anchor='center'):
     return rect
 
 
-def draw_grid(surf, grid, sprites, t_ms):
+def draw_grid(surf, grid, sprites, t_ms, pre_atk=None):
+    pre_atk    = pre_atk or set()
+    any_real_danger = any(grid[r][c] in (WARN, ATCK) for r in range(3) for c in range(3))
     for r in range(3):
         for c in range(3):
             rect  = cell_rect(r, c)
             state = grid[r][c]
 
             if state == SAFE:
-                col = C_SAFE
+                col = C_SAFE_GRN if any_real_danger else C_SAFE
+            elif state == FAKE_WARN:
+                col = C_FAKE_WARN
             elif state == WARN:
-                p   = (math.sin(t_ms * 0.013) + 1) * 0.5
-                col = tuple(int(C_SAFE[i] + (C_WARN[i] - C_SAFE[i]) * p) for i in range(3))
+                if (r, c) in pre_atk:
+                    # Pulse from yellow toward red as the attack approaches
+                    p   = (math.sin(t_ms * 0.06) + 1) * 0.5
+                    col = (
+                        min(255, int(C_WARN[0] + (C_HIT[0] - C_WARN[0]) * p)),
+                        max(0,   int(C_WARN[1] + (C_HIT[1] - C_WARN[1]) * p)),
+                        max(0,   int(C_WARN[2] + (C_HIT[2] - C_WARN[2]) * p)),
+                    )
+                else:
+                    col = C_WARN
             else:
                 p   = (math.sin(t_ms * 0.032) + 1) * 0.5
                 col = (
@@ -327,6 +453,14 @@ def draw_hud(surf, score, elapsed_ms, total_ms, streak):
     blit_text(surf, f"{secs_left:05.2f}s", F_XS, GRAY, bx + bw + 10, by - 1, 'topleft')
 
 
+def draw_sidebar(surf, img):
+    if img is None:
+        return
+    x = GX + GW + 40
+    y = GY
+    surf.blit(img, (x, y))
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  SCREEN: TITLE
 # ═══════════════════════════════════════════════════════════════════════════
@@ -342,6 +476,8 @@ def screen_start():
             if ev.type == pygame.KEYDOWN:
                 if ev.key == pygame.K_ESCAPE: return 'quit'
                 if ev.key in (pygame.K_RETURN, pygame.K_SPACE): return 'select'
+            if ev.type == pygame.JOYBUTTONDOWN:
+                return 'select'
 
         screen.fill(BG)
 
@@ -359,23 +495,208 @@ def screen_start():
         blit_text(screen, "KGB x Roboclub", F_HUGE, tc, SW//2, 85)
         blit_text(screen, "Toby Fox Game", F_SM, GRAY, SW//2, 155)
 
-        blit_text(screen, "CONTROLS", F_SM, WHITE, SW//2, SH - 215)
-        for label, (r, c) in [
-            ('U',(0,0)),('I',(0,1)),('O',(0,2)),
-            ('J',(1,0)),('·',(1,1)),('L',(1,2)),
-            ('M',(2,0)),(',', (2,1)),('.',(2,2)),
-        ]:
-            kx = SW//2 - 65 + c * 44
-            ky = SH - 185   + r * 36
-            col = GOLD if label != '·' else GRAY
-            pygame.draw.rect(screen, (28, 22, 48), (kx, ky, 38, 30), border_radius=5)
-            pygame.draw.rect(screen, C_BORDER,     (kx, ky, 38, 30), 1, border_radius=5)
-            blit_text(screen, label, F_SM, col, kx + 19, ky + 15)
+        # ── Controls description ──────────────────────────────────────────
+        for line_i, (txt, col) in enumerate([
+            ("CONTROLS", WHITE),
+            ("Each DDR pad direction maps to a grid square", GRAY),
+            ("Letting go snaps you back to the center square", GRAY),
+        ]):
+            blit_text(screen, txt, F_SM if line_i > 0 else F_BIG, col,
+                      SW//2, SH - 250 + line_i * 52)
 
         if (t // 500) % 2 == 0:
-            blit_text(screen, "PRESS  ENTER  TO  START", F_MED, WHITE, SW//2, SH - 46)
+            blit_text(screen, "PRESS  ENTER  TO  START", F_MED, WHITE, SW//2, SH - 42)
 
-        pygame.display.flip()
+        _present()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  SCREEN: TUTORIAL
+# ═══════════════════════════════════════════════════════════════════════════
+def screen_tutorial():
+    """3-page tutorial.  Returns 'select' to continue, 'back' for start."""
+    page       = 0
+    PAGE_COUNT = 3
+    t          = 0
+
+    # Page 0 – animated player walking around the grid
+    DEMO_PATH = [
+        (1,1),(0,1),(1,1),(1,2),(1,1),(2,1),(1,1),(1,0),
+        (1,1),(0,0),(1,1),(0,2),(1,1),(2,2),(1,1),(2,0),
+    ]
+    demo_idx   = 0
+    demo_timer = 0
+    DEMO_STEP  = 550   # ms per step
+
+    DIR_LABELS = [
+        ["↖", "↑", "↗"],
+        ["←", "●", "→"],
+        ["↙", "↓", "↘"],
+    ]
+
+    # Scaled heart for the mini-grid
+    MINI  = 110
+    GAP2  = 6
+    H_SZ  = MINI - 30
+    if HEART_LOADED:
+        heart_mini = pygame.transform.smoothscale(HEART_BASE, (H_SZ, H_SZ))
+    else:
+        heart_mini = None
+
+    while True:
+        dt = clock.tick(FPS)
+        t          += dt
+        demo_timer += dt
+        if demo_timer >= DEMO_STEP:
+            demo_timer -= DEMO_STEP
+            demo_idx    = (demo_idx + 1) % len(DEMO_PATH)
+        demo_pos = DEMO_PATH[demo_idx]
+
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                return 'back'
+            if ev.type == pygame.KEYDOWN:
+                k = ev.key
+                if k == pygame.K_ESCAPE:
+                    return 'back'
+                if k in (pygame.K_RIGHT, pygame.K_RETURN, pygame.K_SPACE, pygame.K_d):
+                    if page < PAGE_COUNT - 1:
+                        page += 1
+                    else:
+                        return 'select'
+                if k in (pygame.K_LEFT, pygame.K_a):
+                    page = max(0, page - 1)
+            if ev.type == pygame.JOYHATMOTION:
+                if ev.value[0] ==  1: page = min(PAGE_COUNT - 1, page + 1)
+                if ev.value[0] == -1: page = max(0, page - 1)
+            if ev.type == pygame.JOYBUTTONDOWN:
+                if page < PAGE_COUNT - 1:
+                    page += 1
+                else:
+                    return 'select'
+
+        screen.fill(BG)
+
+        # ── Page dots ────────────────────────────────────────────────────────
+        for pi in range(PAGE_COUNT):
+            cx  = SW // 2 + (pi - PAGE_COUNT // 2) * 30
+            col = WHITE if pi == page else DK_GRAY
+            pygame.draw.circle(screen, col, (cx, 56), 7)
+
+        # ── ESC hint ─────────────────────────────────────────────────────────
+        blit_text(screen, "ESC  Back", F_XS, GRAY, SW - 30, 28, 'topright')
+
+        # ════════════════════════════════════════════════════════════════════
+        if page == 0:
+            # ── PAGE 0: MOVEMENT ─────────────────────────────────────────────
+            blit_text(screen, "MOVEMENT", F_BIG, PURPLE, SW // 2, 108)
+
+            MGW = MINI * 3 + GAP2 * 2
+            MGH = MINI * 3 + GAP2 * 2
+            MGX = (SW - MGW) // 2
+            MGY = (SH - MGH) // 2 - 50
+
+            for r in range(3):
+                for c in range(3):
+                    rx   = MGX + c * (MINI + GAP2)
+                    ry   = MGY + r * (MINI + GAP2)
+                    rect = pygame.Rect(rx, ry, MINI, MINI)
+                    is_p = (r, c) == demo_pos
+                    col  = (60, 48, 100) if is_p else C_SAFE
+                    pygame.draw.rect(screen, col,      rect, border_radius=10)
+                    pygame.draw.rect(screen, C_BORDER, rect, 2,  border_radius=10)
+                    lbl_col = WHITE if is_p else GRAY
+                    blit_text(screen, DIR_LABELS[r][c], F_MED, lbl_col,
+                              rx + MINI // 2, ry + MINI // 2)
+
+            # Heart on demo_pos
+            pr, pc = demo_pos
+            hx = MGX + pc * (MINI + GAP2) + MINI // 2
+            hy = MGY + pr * (MINI + GAP2) + MINI // 2
+            if heart_mini:
+                screen.blit(heart_mini, (hx - H_SZ // 2, hy - H_SZ // 2))
+            else:
+                pygame.draw.circle(screen, C_PLR, (hx, hy), 24)
+
+            blit_text(screen, "Each DDR pad direction moves to that grid square.",
+                      F_SM, WHITE, SW // 2, MGY + MGH + 50)
+            blit_text(screen, "Releasing any direction snaps you back to center.",
+                      F_SM, GRAY,  SW // 2, MGY + MGH + 88)
+
+        # ════════════════════════════════════════════════════════════════════
+        elif page == 1:
+            # ── PAGE 1: WARNINGS & ATTACKS ───────────────────────────────────
+            blit_text(screen, "WARNINGS  &  ATTACKS", F_BIG, PURPLE, SW // 2, 108)
+
+            DC   = 170   # demo cell size
+            DGAP = 90
+            tot  = DC * 3 + DGAP * 2
+            sx   = (SW - tot) // 2
+            cy   = SH // 2 - 20
+
+            demos = [
+                (SAFE, "SAFE",    GREEN, "You're in the clear."),
+                (WARN, "WARNING", GOLD,  "Attack incoming — move soon!"),
+                (ATCK, "ATTACK",  RED,   "Get off this square NOW!"),
+            ]
+            for i, (state, label, col, tip) in enumerate(demos):
+                cx   = sx + i * (DC + DGAP) + DC // 2
+                rect = pygame.Rect(cx - DC // 2, cy - DC // 2, DC, DC)
+
+                if state == SAFE:
+                    cell_col = C_SAFE_GRN
+                elif state == WARN:
+                    cell_col = C_WARN
+                else:
+                    p        = (math.sin(t * 0.032) + 1) * 0.5
+                    cell_col = (
+                        min(255, int(C_HIT[0] + 28 * p)),
+                        max(0,   int(C_HIT[1] - 10 * p)),
+                        max(0,   int(C_HIT[2] -  5 * p)),
+                    )
+
+                pygame.draw.rect(screen, cell_col, rect, border_radius=14)
+                pygame.draw.rect(screen, C_BORDER,  rect, 3,  border_radius=14)
+                blit_text(screen, label, F_MED, col, cx, cy + DC // 2 + 36)
+                blit_text(screen, tip,   F_XS,  GRAY, cx, cy + DC // 2 + 76)
+
+            blit_text(screen,
+                      "Squares pulse yellow briefly before an attack, then turn red.",
+                      F_SM, WHITE, SW // 2, SH - 150)
+            blit_text(screen,
+                      "You have a short window after the warning to step away.",
+                      F_SM, GRAY,  SW // 2, SH - 108)
+
+        # ════════════════════════════════════════════════════════════════════
+        elif page == 2:
+            # ── PAGE 2: SCORING & TIPS ───────────────────────────────────────
+            blit_text(screen, "SCORING  &  TIPS", F_BIG, PURPLE, SW // 2, 108)
+
+            score_lines = [
+                ("+1 per frame  on a safe square", GREEN),
+                ("-100          when hit by an attack", RED),
+                ("STREAK        3+ hits dodged in a row", TEAL),
+            ]
+            for i, (txt, col) in enumerate(score_lines):
+                blit_text(screen, txt, F_SM, col, SW // 2, 310 + i * 82)
+
+            tip_lines = [
+                ("Watch the progress bar below the grid — it counts down the song.",
+                 GRAY),
+                ("You can return to the menu mid-level with ESC.", GRAY),
+                ("Good luck!", WHITE),
+            ]
+            for i, (txt, col) in enumerate(tip_lines):
+                blit_text(screen, txt, F_XS, col, SW // 2, 570 + i * 52)
+
+        # ── Navigation hint ──────────────────────────────────────────────────
+        if (t // 500) % 2 == 0:
+            if page < PAGE_COUNT - 1:
+                blit_text(screen, "ENTER / →  Next",  F_SM, WHITE, SW // 2, SH - 46)
+            else:
+                blit_text(screen, "ENTER  Play!", F_MED, WHITE, SW // 2, SH - 46)
+
+        _present()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -393,25 +714,30 @@ def screen_level_select():
                 if k in (pygame.K_UP,   pygame.K_w):       sel = (sel - 1) % len(LEVELS)
                 if k in (pygame.K_DOWN, pygame.K_s):       sel = (sel + 1) % len(LEVELS)
                 if k in (pygame.K_RETURN, pygame.K_SPACE): return sel
+            if ev.type == pygame.JOYHATMOTION:
+                if ev.value[1] ==  1: sel = (sel - 1) % len(LEVELS)
+                if ev.value[1] == -1: sel = (sel + 1) % len(LEVELS)
+            if ev.type == pygame.JOYBUTTONDOWN:
+                return sel
 
         screen.fill(BG)
         blit_text(screen, "SELECT  LEVEL", F_BIG, PURPLE, SW//2, 80)
 
         for i, lv in enumerate(LEVELS):
-            y      = 200 + i * 98
+            y      = 220 + i * 120
             is_sel = (i == sel)
             bg     = (48, 38, 78) if is_sel else (22, 17, 38)
-            rect   = pygame.Rect(SW//2 - 230, y - 28, 460, 64)
-            pygame.draw.rect(screen, bg, rect, border_radius=13)
+            rect   = pygame.Rect(SW//2 - 320, y - 36, 640, 84)
+            pygame.draw.rect(screen, bg, rect, border_radius=14)
             if is_sel:
-                pygame.draw.rect(screen, PURPLE, rect, 2, border_radius=13)
+                pygame.draw.rect(screen, PURPLE, rect, 3, border_radius=14)
             col = WHITE if is_sel else GRAY
-            blit_text(screen, lv['name'],     F_MED, col,  SW//2, y - 4)
-            blit_text(screen, lv['subtitle'], F_XS,  GRAY, SW//2, y + 24)
+            blit_text(screen, lv['name'],     F_MED, col,  SW//2, y - 6)
+            blit_text(screen, lv['subtitle'], F_SM,  GRAY, SW//2, y + 32)
 
         blit_text(screen, "↑ ↓  Navigate    ENTER  Select    ESC  Back",
-                  F_XS, GRAY, SW//2, SH - 38)
-        pygame.display.flip()
+                  F_SM, GRAY, SW//2, SH - 44)
+        _present()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -420,6 +746,7 @@ def screen_level_select():
 def screen_game(level_idx):
     level    = LEVELS[level_idx]
     data     = level['data']
+    sidebar  = level.get('sidebar')
     total_ms = sum(s['duration'] for s in data)
 
     # ── Music ─────────────────────────────────────────────────────────────
@@ -473,9 +800,22 @@ def screen_game(level_idx):
                 if ev.key == pygame.K_ESCAPE:
                     if music_ok: pygame.mixer.music.stop()
                     return score, 'back'
-                player.key_down(ev.key)
+                else:
+                    player.key_down(ev.key)
             if ev.type == pygame.KEYUP:
                 player.key_up(ev.key)
+            if ev.type == pygame.JOYHATMOTION:
+                pos = HAT_POS.get(ev.value)
+                if pos is not None:
+                    player.pos = pos
+            if ev.type == pygame.JOYBUTTONDOWN:
+                player.joy_down(ev.button)
+            if ev.type == pygame.JOYBUTTONUP:
+                player.joy_up(ev.button)
+            if ev.type == pygame.JOYAXISMOTION:
+                if ev.axis == 0: _joy_axes[0] = ev.value
+                if ev.axis == 1: _joy_axes[1] = ev.value
+                player.pos = _axes_to_pos()
 
         while seg_idx < len(data) and seg_timer >= data[seg_idx]['duration']:
             seg_timer -= data[seg_idx]['duration']
@@ -488,10 +828,21 @@ def screen_game(level_idx):
         grid    = cur['grid']
         sprites = cur['sprites']
 
+        # Cells currently WARN that will become ATCK next segment
+        pre_atk = set()
+        if seg_idx + 1 < len(data):
+            next_grid  = data[seg_idx + 1]['grid']
+            time_ratio = seg_timer / max(1, cur['duration'])
+            if time_ratio > 0.5:   # only flash in the second half of the warn beat
+                for _r in range(3):
+                    for _c in range(3):
+                        if grid[_r][_c] == WARN and next_grid[_r][_c] == ATCK:
+                            pre_atk.add((_r, _c))
+
         for r in range(3):
             for c in range(3):
                 old, new = prev_grid[r][c], grid[r][c]
-                if old != WARN and new == WARN:
+                if old not in (WARN, FAKE_WARN) and new in (WARN, FAKE_WARN):
                     SND_WARN.play()
                     break
                 if old == WARN and new == ATCK:
@@ -521,11 +872,12 @@ def screen_game(level_idx):
         popups = [p for p in popups if p.alive]
 
         screen.fill(BG)
-        draw_grid(screen, grid, sprites, pulse_t)
+        draw_grid(screen, grid, sprites, pulse_t, pre_atk)
         player.draw(screen)
         draw_hud(screen, score, elapsed, total_ms, streak)
+        draw_sidebar(screen, sidebar)
         for p in popups: p.draw(screen)
-        pygame.display.flip()
+        _present()
 
     if music_ok: pygame.mixer.music.stop()
     SND_END.play()
@@ -539,24 +891,25 @@ def screen_end(score):
     t = 0
 
     for threshold, grade, gcol in [
-        (2400, 'S', GOLD),
-        (2000, 'A', GREEN),
-        (1600, 'B', PURPLE),
-        (800,  'C', WHITE),
+        (2000, 'S', GOLD),
+        (1500, 'A', GREEN),
+        (1000, 'B', PURPLE),
+        (500,  'C', WHITE),
         (0,    'D', RED),
     ]:
         if score >= threshold:
             break
 
-    descs = {'S': '[[BIG SHOT]]!!!', 'A': 'You are filled with determination', 'B': 'NYEH HEH HEEEEH', 'C': '...', 'D': 'You ate the Moss'}
+    descs = {'S': 'Youre a [[BIG SHOT]]!!!', 'A': 'You are filled with determination', 'B': 'NYEH HEH HEEEEH', 'C': 'Frozen Spaghetti...', 'D': 'You ate the Moss'}
 
     while True:
         dt = clock.tick(FPS)
         t += dt
 
         for ev in pygame.event.get():
-            if ev.type == pygame.QUIT: return 'quit'
-            if ev.type == pygame.KEYDOWN: return 'menu'
+            if ev.type == pygame.QUIT:        return 'quit'
+            if ev.type == pygame.KEYDOWN:     return 'menu'
+            if ev.type == pygame.JOYBUTTONDOWN: return 'menu'
 
         screen.fill(BG)
 
@@ -573,7 +926,7 @@ def screen_end(score):
             blit_text(screen, "PRESS  ANY  KEY  to return to menu",
                       F_SM, GRAY, SW//2, SH - 46)
 
-        pygame.display.flip()
+        _present()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -587,7 +940,14 @@ def main():
     while True:
         if state == 'start':
             result = screen_start()
-            state  = 'select' if result == 'select' else None
+            if result == 'select': state = 'tutorial'
+            else:                  state = None
+
+        elif state == 'tutorial':
+            result = screen_tutorial()
+            if result == 'select': state = 'select'
+            elif result == 'back': state = 'start'
+            else:                  state = None
 
         elif state == 'select':
             result = screen_level_select()
