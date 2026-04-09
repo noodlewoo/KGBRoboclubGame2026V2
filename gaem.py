@@ -255,7 +255,7 @@ LEVELS = [
         'subtitle': '147.5 BPM  \u00b7  40 s  \u00b7  Hard',
         'bpm':      147.5,
         'music':    'BlackKnife.ogg',
-        'data':     level_blackknife.build_level(warn_beats=1),
+        'data':     level_blackknife.build_level(),
         'sidebar':  IMG_ROARINGKNIGHT,
     },
     {
