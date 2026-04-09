@@ -12,7 +12,8 @@
     in {
       default = pkgs.mkShell {
         packages = with pkgs; [
-          sdl3
+          libx11
+          SDL2
           uv
         ];
       };
