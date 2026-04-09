@@ -184,7 +184,7 @@ IMG_SPAMTON   = _load_sidebar("spamtonneo.png")
 IMG_UNDYNE    = _load_sidebar("Undyne.png")
 IMG_ASRIEL    = _load_sidebar("asriel.png")
 IMG_ROARINGKNIGHT = _load_sidebar("RoaringKnight.png")
-IMG_METATON   = _load_sidebar("MattatonEX.png")
+IMG_METATON   = _load_sidebar("MettatonEX.png")
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  SOUNDS  (synthesised – no external files needed)
@@ -485,9 +485,7 @@ def screen_start():
                 return 'quit'
             if ev.type == pygame.KEYDOWN:
                 if ev.key == pygame.K_ESCAPE: return 'quit'
-                if ev.key in (pygame.K_RETURN, pygame.K_SPACE): return 'select'
-            if ev.type == pygame.JOYBUTTONDOWN:
-                return 'select'
+                if ev.key == pygame.K_1: return 'select'
 
         screen.fill(BG)
 
@@ -515,7 +513,7 @@ def screen_start():
                       SW//2, SH - 250 + line_i * 52)
 
         if (t // 500) % 2 == 0:
-            blit_text(screen, "PRESS  ENTER  TO  START", F_MED, WHITE, SW//2, SH - 42)
+            blit_text(screen, "PRESS  ACT  TO  START", F_MED, WHITE, SW//2, SH - 42)
 
         _present()
 
@@ -567,23 +565,13 @@ def screen_tutorial():
                 return 'back'
             if ev.type == pygame.KEYDOWN:
                 k = ev.key
-                if k == pygame.K_ESCAPE:
+                if k == pygame.K_3:
                     return 'back'
-                if k in (pygame.K_RIGHT, pygame.K_RETURN, pygame.K_SPACE, pygame.K_d):
+                if k == pygame.K_1:
                     if page < PAGE_COUNT - 1:
                         page += 1
                     else:
                         return 'select'
-                if k in (pygame.K_LEFT, pygame.K_a):
-                    page = max(0, page - 1)
-            if ev.type == pygame.JOYHATMOTION:
-                if ev.value[0] ==  1: page = min(PAGE_COUNT - 1, page + 1)
-                if ev.value[0] == -1: page = max(0, page - 1)
-            if ev.type == pygame.JOYBUTTONDOWN:
-                if page < PAGE_COUNT - 1:
-                    page += 1
-                else:
-                    return 'select'
 
         screen.fill(BG)
 
@@ -593,8 +581,8 @@ def screen_tutorial():
             col = WHITE if pi == page else DK_GRAY
             pygame.draw.circle(screen, col, (cx, 56), 7)
 
-        # ── ESC hint ─────────────────────────────────────────────────────────
-        blit_text(screen, "ESC  Back", F_XS, GRAY, SW - 30, 28, 'topright')
+        # ── Back hint ────────────────────────────────────────────────────────
+        blit_text(screen, "MERCY:  Back", F_XS, GRAY, SW - 30, 28, 'topright')
 
         # ════════════════════════════════════════════════════════════════════
         if page == 0:
@@ -702,9 +690,9 @@ def screen_tutorial():
         # ── Navigation hint ──────────────────────────────────────────────────
         if (t // 500) % 2 == 0:
             if page < PAGE_COUNT - 1:
-                blit_text(screen, "ENTER / →  Next",  F_SM, WHITE, SW // 2, SH - 46)
+                blit_text(screen, "ACT:  Next",  F_SM, WHITE, SW // 2, SH - 46)
             else:
-                blit_text(screen, "ENTER  Play!", F_MED, WHITE, SW // 2, SH - 46)
+                blit_text(screen, "ACT:  Play!", F_MED, WHITE, SW // 2, SH - 46)
 
         _present()
 
@@ -720,15 +708,9 @@ def screen_level_select():
             if ev.type == pygame.QUIT: return 'back'
             if ev.type == pygame.KEYDOWN:
                 k = ev.key
-                if k == pygame.K_ESCAPE:                   return 'back'
-                if k in (pygame.K_UP,   pygame.K_w):       sel = (sel - 1) % len(LEVELS)
-                if k in (pygame.K_DOWN, pygame.K_s):       sel = (sel + 1) % len(LEVELS)
-                if k in (pygame.K_RETURN, pygame.K_SPACE): return sel
-            if ev.type == pygame.JOYHATMOTION:
-                if ev.value[1] ==  1: sel = (sel - 1) % len(LEVELS)
-                if ev.value[1] == -1: sel = (sel + 1) % len(LEVELS)
-            if ev.type == pygame.JOYBUTTONDOWN:
-                return sel
+                if k == pygame.K_3: return 'back'
+                if k == pygame.K_1: sel = (sel + 1) % len(LEVELS)
+                if k == pygame.K_2: return sel
 
         screen.fill(BG)
         blit_text(screen, "SELECT  LEVEL", F_BIG, PURPLE, SW//2, 80)
@@ -745,7 +727,7 @@ def screen_level_select():
             blit_text(screen, lv['name'],     F_MED, col,  SW//2, y - 6)
             blit_text(screen, lv['subtitle'], F_SM,  GRAY, SW//2, y + 32)
 
-        blit_text(screen, "↑ ↓  Navigate    ENTER  Select    ESC  Back",
+        blit_text(screen, "ACT:  Cycle    FIGHT:  Select    MERCY:  Back",
                   F_SM, GRAY, SW//2, SH - 44)
         _present()
 
@@ -917,9 +899,8 @@ def screen_end(score):
         t += dt
 
         for ev in pygame.event.get():
-            if ev.type == pygame.QUIT:        return 'quit'
-            if ev.type == pygame.KEYDOWN:     return 'menu'
-            if ev.type == pygame.JOYBUTTONDOWN: return 'menu'
+            if ev.type == pygame.QUIT:    return 'quit'
+            if ev.type == pygame.KEYDOWN: return 'menu'
 
         screen.fill(BG)
 
