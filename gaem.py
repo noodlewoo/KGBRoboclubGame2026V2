@@ -77,6 +77,7 @@ import level_bigshot
 import level_undyne
 import level_histheme
 import level_blackknife
+import level_deathbyglamour
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  CONTROLS  (DDR pad mapped to keyboard + joystick)
@@ -183,6 +184,7 @@ IMG_SPAMTON   = _load_sidebar("spamtonneo.png")
 IMG_UNDYNE    = _load_sidebar("Undyne.png")
 IMG_ASRIEL    = _load_sidebar("asriel.png")
 IMG_ROARINGKNIGHT = _load_sidebar("RoaringKnight.png")
+IMG_METATON   = _load_sidebar("MattatonEX.png")
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  SOUNDS  (synthesised – no external files needed)
@@ -225,14 +227,6 @@ LEVELS = [
         'sidebar':  IMG_ASRIEL,
     },
     {
-        'name':     'Black Knife',
-        'subtitle': '147.5 BPM  \u00b7  40 s  \u00b7  Easy',
-        'bpm':      147.5,
-        'music':    'BlackKnife.ogg',
-        'data':     level_blackknife.build_level(),
-        'sidebar':  IMG_ROARINGKNIGHT,
-    },
-    {
         'name':     '[[BIG SHOT]]',
         'subtitle': '140 BPM  \u00b7  40 s  \u00b7  Medium',
         'bpm':      140,
@@ -242,7 +236,7 @@ LEVELS = [
     },
     {
         'name':     'Megalovania',
-        'subtitle': '120 BPM  \u00b7  40 s  \u00b7  Hard',
+        'subtitle': '120 BPM  \u00b7  40 s  \u00b7  Medium',
         'bpm':      120,
         'music':    'Megalovania.ogg',
         'data':     level_megalovania.build_level(warn_beats=2),
@@ -250,11 +244,27 @@ LEVELS = [
     },
     {
         'name':     'A Battle Against a True Hero',
-        'subtitle': '150 BPM  \u00b7  40 s  \u00b7  Hard',
+        'subtitle': '150 BPM  \u00b7  40 s  \u00b7  Medium',
         'bpm':      150,
         'music':    'BattleAgainstATrueHero.ogg',
         'data':     level_undyne.build_level(),
         'sidebar':  IMG_UNDYNE,
+    },
+    {
+        'name':     'Black Knife',
+        'subtitle': '147.5 BPM  \u00b7  40 s  \u00b7  Hard',
+        'bpm':      147.5,
+        'music':    'BlackKnife.ogg',
+        'data':     level_blackknife.build_level(warn_beats=1),
+        'sidebar':  IMG_ROARINGKNIGHT,
+    },
+    {
+        'name':     'Death By Glamour',
+        'subtitle': '148 BPM  \u00b7  40 s  \u00b7  Hard',
+        'bpm':      120,
+        'music':    'deathbyglamour.ogg',
+        'data':     level_deathbyglamour.build_level(warn_beats=1),
+        'sidebar':  IMG_METATON,
     },
 ]
 
