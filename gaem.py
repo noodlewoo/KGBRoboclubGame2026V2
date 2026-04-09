@@ -37,8 +37,9 @@ def _present():
 BG        = ( 12,   9,  22)
 C_SAFE    = ( 32,  26,  55)
 C_SAFE_GRN= ( 30,  90,  50)
-C_WARN    = (195, 138,   8)
-C_HIT     = (188,  34,  34)
+C_WARN      = (195, 138,   8)
+C_FAKE_WARN = (  0, 200, 220)
+C_HIT       = (188,  34,  34)
 C_BORDER  = ( 68,  56, 108)
 C_PLR     = (110, 225, 255)
 C_PLR_HIT = (255,  85,  85)
@@ -70,7 +71,7 @@ def cell_rect(r, c):
 # ═══════════════════════════════════════════════════════════════════════════
 #  SQUARE STATES  (imported from level_helpers so level files share them)
 # ═══════════════════════════════════════════════════════════════════════════
-from level_helpers import SAFE, WARN, ATCK
+from level_helpers import SAFE, WARN, ATCK, FAKE_WARN
 import level_megalovania
 import level_bigshot
 import level_undyne
@@ -224,6 +225,14 @@ LEVELS = [
         'sidebar':  IMG_ASRIEL,
     },
     {
+        'name':     'Black Knife',
+        'subtitle': '147.5 BPM  \u00b7  40 s  \u00b7  Easy',
+        'bpm':      147.5,
+        'music':    'BlackKnife.ogg',
+        'data':     level_blackknife.build_level(),
+        'sidebar':  IMG_ROARINGKNIGHT,
+    },
+    {
         'name':     '[[BIG SHOT]]',
         'subtitle': '140 BPM  \u00b7  40 s  \u00b7  Medium',
         'bpm':      140,
@@ -236,7 +245,7 @@ LEVELS = [
         'subtitle': '120 BPM  \u00b7  40 s  \u00b7  Hard',
         'bpm':      120,
         'music':    'Megalovania.ogg',
-        'data':     level_megalovania.build_level(warn_beats=1),
+        'data':     level_megalovania.build_level(warn_beats=2),
         'sidebar':  IMG_SANS,
     },
     {
@@ -246,14 +255,6 @@ LEVELS = [
         'music':    'BattleAgainstATrueHero.ogg',
         'data':     level_undyne.build_level(),
         'sidebar':  IMG_UNDYNE,
-    },
-    {
-        'name':     'Black Knife',
-        'subtitle': '147.5 BPM  \u00b7  40 s  \u00b7  Insane',
-        'bpm':      147.5,
-        'music':    'BlackKnife.ogg',
-        'data':     level_blackknife.build_level(),
-        'sidebar':  IMG_ROARINGKNIGHT,
     },
 ]
 
@@ -266,8 +267,9 @@ class Player:
     MOVE_SPEED = 1400   # pixels per second for smooth glide
 
     def __init__(self):
-        self.pos   = CENTER
-        self.held  = []
+        self.pos        = CENTER
+        self.held       = []
+        self.held_btns  = []
         self.flash = 0
         self.glow  = 0
         r, c = CENTER
@@ -289,6 +291,16 @@ class Player:
         if key in self.held:
             self.held.remove(key)
             self.pos = KEY_POS[self.held[-1]] if self.held else CENTER
+
+    def joy_down(self, btn):
+        if btn in BTN_POS and btn not in self.held_btns:
+            self.held_btns.append(btn)
+            self.pos = BTN_POS[btn]
+
+    def joy_up(self, btn):
+        if btn in self.held_btns:
+            self.held_btns.remove(btn)
+            self.pos = BTN_POS[self.held_btns[-1]] if self.held_btns else CENTER
 
     def update(self, dt):
         self.flash = max(0, self.flash - dt)
@@ -375,14 +387,16 @@ def blit_text(surf, text, font, color, cx, cy, anchor='center'):
 
 def draw_grid(surf, grid, sprites, t_ms, pre_atk=None):
     pre_atk    = pre_atk or set()
-    any_danger = any(grid[r][c] in (WARN, ATCK) for r in range(3) for c in range(3))
+    any_real_danger = any(grid[r][c] in (WARN, ATCK) for r in range(3) for c in range(3))
     for r in range(3):
         for c in range(3):
             rect  = cell_rect(r, c)
             state = grid[r][c]
 
             if state == SAFE:
-                col = C_SAFE_GRN if any_danger else C_SAFE
+                col = C_SAFE_GRN if any_real_danger else C_SAFE
+            elif state == FAKE_WARN:
+                col = C_FAKE_WARN
             elif state == WARN:
                 if (r, c) in pre_atk:
                     # Pulse from yellow toward red as the attack approaches
@@ -795,12 +809,9 @@ def screen_game(level_idx):
                 if pos is not None:
                     player.pos = pos
             if ev.type == pygame.JOYBUTTONDOWN:
-                pos = BTN_POS.get(ev.button)
-                if pos is not None:
-                    player.pos = pos
+                player.joy_down(ev.button)
             if ev.type == pygame.JOYBUTTONUP:
-                if ev.button in BTN_POS:
-                    player.pos = CENTER
+                player.joy_up(ev.button)
             if ev.type == pygame.JOYAXISMOTION:
                 if ev.axis == 0: _joy_axes[0] = ev.value
                 if ev.axis == 1: _joy_axes[1] = ev.value
@@ -831,7 +842,7 @@ def screen_game(level_idx):
         for r in range(3):
             for c in range(3):
                 old, new = prev_grid[r][c], grid[r][c]
-                if old != WARN and new == WARN:
+                if old not in (WARN, FAKE_WARN) and new in (WARN, FAKE_WARN):
                     SND_WARN.play()
                     break
                 if old == WARN and new == ATCK:
@@ -880,10 +891,10 @@ def screen_end(score):
     t = 0
 
     for threshold, grade, gcol in [
-        (2400, 'S', GOLD),
-        (2000, 'A', GREEN),
-        (1600, 'B', PURPLE),
-        (800,  'C', WHITE),
+        (2000, 'S', GOLD),
+        (1500, 'A', GREEN),
+        (1000, 'B', PURPLE),
+        (500,  'C', WHITE),
         (0,    'D', RED),
     ]:
         if score >= threshold:

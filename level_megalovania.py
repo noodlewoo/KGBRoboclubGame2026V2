@@ -87,39 +87,37 @@ def build_level(warn_beats=1):
     if used < 10_000:
         segs.append(seg(10_000 - used, _safe_grid()))
 
-    # ── PHASE 2b: 25–40 s ────────────────────────────────────────────────────
-    # Edge cells in clockwise order starting from bottom-mid.
-    # Each sweep: 8 consecutive WARN frames, then 8 consecutive HIT frames.
-    # Only the rotating edge cell is safe; all 8 other squares are danger.
-    #
-    # Timing per sweep:
-    #   8 warns × 500 ms = 4 000 ms
-    #   8 hits  × 200 ms = 1 600 ms
-    #   8 rests × 200 ms = 1 600 ms
-    #   total             = 7 200 ms   (× 2 sweeps = 14 400 ms, ~600 ms pad)
+    # ── PHASE 2b: 25–40 s · single clockwise spiral ──────────────────────────
+    # 8 steps around the edge. All 8 WARN frames play first so the player can
+    # read the full rotation, then all 8 HIT frames follow.
+    # WARN_DUR = HIT_DUR, computed to fill exactly the remaining time.
+    #   spiral_ms = 8×WARN + 8×(HIT+REST)  →  D = (spiral_ms - 8×REST) / 16
 
-    WARN_DUR = BT    # 500 ms – 1 beat per warn frame
-    HIT_DUR  = 200
-    REST_DUR = 200
+    REST_DUR  = 200
+    spiral_ms = 40_000 - sum(s['duration'] for s in segs)
+    D         = (spiral_ms - 8 * REST_DUR) // 16
+    WARN_DUR  = D
+    HIT_DUR   = D
 
-    CW  = [(2,1),(2,2),(1,2),(0,2),(0,1),(0,0),(1,0),(2,0)]  # clockwise
-    CCW = list(reversed(CW))                                   # counterclockwise
+    CW = [(2,1),(2,2),(1,2),(0,2),(0,1),(0,0),(1,0),(2,0)]  # clockwise
 
     def sweep(safe_order):
         result = []
+        n = len(safe_order)
+        # Each step: two consecutive edge cells are safe
+        safe_pairs = [(safe_order[i], safe_order[(i + 1) % n]) for i in range(n)]
         # All warns first
-        for safe in safe_order:
-            danger = [c for c in ALL9 if c != safe]
+        for pair in safe_pairs:
+            danger = [c for c in ALL9 if c not in pair]
             result.append(seg(WARN_DUR, _warn_grid(*danger)))
         # All hits after
-        for safe in safe_order:
-            danger = [c for c in ALL9 if c != safe]
+        for pair in safe_pairs:
+            danger = [c for c in ALL9 if c not in pair]
             result.append(seg(HIT_DUR,  _hit_grid(*danger)))
             result.append(seg(REST_DUR, _safe_grid()))
         return result
 
     add(sweep(CW))
-    add(sweep(CCW))
 
     # Pad to exactly 40 s
     total = sum(s['duration'] for s in segs)

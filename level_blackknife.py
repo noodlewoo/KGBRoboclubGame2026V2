@@ -20,9 +20,9 @@ def build_level():
     Phase 2: 26–40 s   (blank for now)
     """
     BT   = round(60_000 / 147.5)   # 407 ms per beat @ 147.5 BPM
-    W    = BT // 2                  # 203 ms half-beat warn
+    W    = BT * 3                   # 1221 ms 3-beat warn
     H    = BT // 2                  # 203 ms half-beat hit
-    SLOT = W + H                    # 406 ms per attack (~1 beat)
+    SLOT = W + H                    # 1424 ms per attack
 
     # ── Named lines ──────────────────────────────────────────────────────────
     RT = [(0, 0), (0, 1), (0, 2)]   # row top

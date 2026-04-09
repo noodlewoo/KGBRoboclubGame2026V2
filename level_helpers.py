@@ -3,9 +3,10 @@
 # ═══════════════════════════════════════════════════════════════════════════
 
 # ── Square states ───────────────────────────────────────────────────────────
-SAFE = 0   # all clear
-WARN = 1   # attack incoming (warning / pre-flash)
-ATCK = 2   # actively attacked
+SAFE      = 0   # all clear
+WARN      = 1   # attack incoming (warning / pre-flash)
+ATCK      = 2   # actively attacked
+FAKE_WARN = 3   # decoy warning (cyan) — does not become an attack
 
 # ── Colors used by level builders ──────────────────────────────────────────
 GOLD   = (255, 205,  50)
@@ -25,6 +26,11 @@ def _warn_grid(*cells):
 def _hit_grid(*cells):
     g = [SAFE] * 9
     for r, c in cells: g[r * 3 + c] = ATCK
+    return [g[0:3], g[3:6], g[6:9]]
+
+def _fake_warn_grid(*cells):
+    g = [SAFE] * 9
+    for r, c in cells: g[r * 3 + c] = FAKE_WARN
     return [g[0:3], g[3:6], g[6:9]]
 
 # ── Segment / attack builders ───────────────────────────────────────────────

@@ -1,7 +1,7 @@
 # ═══════════════════════════════════════════════════════════════════════════
 #  A BATTLE AGAINST A TRUE HERO  –  LEVEL BUILDER
 # ═══════════════════════════════════════════════════════════════════════════
-from level_helpers import seg, attack, _safe_grid, _warn_grid, _hit_grid
+from level_helpers import seg, attack, _safe_grid, _warn_grid, _hit_grid, _fake_warn_grid
 
 
 def build_level():
@@ -17,9 +17,9 @@ def build_level():
                         attack's danger zone
     """
     BT    = round(60_000 / 150)   # 400 ms per beat @ 150 BPM
-    W     = BT                     # 1-beat warn  (400 ms)
+    W     = 2 * BT                 # 2-beat warn  (800 ms)
     H     = 200                    # hit duration
-    TOTAL = W + BT                 # 800 ms per attack slot
+    TOTAL = W + BT                 # 1200 ms per attack slot
 
     # ── Named lines ──────────────────────────────────────────────────────────
     RT = [(0,0),(0,1),(0,2)]   # row top
@@ -88,46 +88,36 @@ def build_level():
     #   2. REAL WARN  (1 beat) – warns the actual pair that will hit
     #   3. HIT        (200 ms) + REST (200 ms)
     #
-    # Fake/real pairs chosen so fake-safe ⊂ real-danger:
-    #   real u(RT,RM) safe=RB → fake u(RM,RB) fake-safe=RT  (RT is in real ✓)
-    #   real u(RM,RB) safe=RT → fake u(RT,RM) fake-safe=RB  (RB is in real ✓)
-    #   real u(CL,CM) safe=CR → fake u(CM,CR) fake-safe=CL  (CL is in real ✓)
-    #   real u(CM,CR) safe=CL → fake u(CL,CM) fake-safe=CR  (CR is in real ✓)
-    W_FAKE  = BT          # 400 ms fake warn
-    W_REAL  = BT          # 400 ms real warn
+    # Fake/real pairs: always same type (row→row or col→col).
+    # Fake-safe spot is inside the real danger zone:
+    #   fake u(RM,RB) → real u(RT,RM): fake-safe=RT ⊂ real ✓
+    #   fake u(CM,CR) → real u(CL,CM): fake-safe=CL ⊂ real ✓
+    #   fake u(RT,RM) → real u(RM,RB): fake-safe=RB ⊂ real ✓
+    #   fake u(CL,CM) → real u(CM,CR): fake-safe=CR ⊂ real ✓
+    W_FAKE  = 2 * BT      # 800 ms fake warn
+    W_REAL  = 2 * BT      # 800 ms real warn
     H3      = 200
     REST3   = BT - H3     # 200 ms
-    TOTAL3  = W_FAKE + W_REAL + H3 + REST3   # 1200 ms
+    TOTAL3  = W_FAKE + W_REAL + H3 + REST3   # 2000 ms
 
     def fake_atk(fake_cells, real_cells):
         return [
-            seg(W_FAKE, _warn_grid(*fake_cells)),
+            seg(W_FAKE, _fake_warn_grid(*fake_cells)),
             seg(W_REAL, _warn_grid(*real_cells)),
             seg(H3,     _hit_grid(*real_cells)),
             seg(REST3,  _safe_grid()),
         ]
 
-    p3_odd_patterns = [
-        (u(RM, RB), u(RT, RM)),
-        (u(CM, CR), u(CL, CM)),
-        (u(RT, RM), u(RM, RB)),
-        (u(CL, CM), u(CM, CR)),
+    p3_patterns = [
+        (u(RM, RB), u(RT, RM)),   # row fake → row real
+        (u(CM, CR), u(CL, CM)),   # col fake → col real
+        (u(RT, RM), u(RM, RB)),   # row fake → row real
+        (u(CL, CM), u(CM, CR)),   # col fake → col real
     ]
-    p3_even_patterns = [
-        (u(CM, CR), u(RT, RM)),   # col fake, row real
-        (u(RM, RB), u(CL, CM)),   # row fake, col real
-        (u(CL, CM), u(RM, RB)),   # col fake, row real
-        (u(RT, RM), u(CM, CR)),   # row fake, col real
-    ]
-    p3_n = 22_000 // TOTAL3      # 18 slots
+    p3_n = 22_000 // TOTAL3
     for i in range(p3_n):
-        if i == 0:
-            add(fake_atk((RB), u(RT, RM)))
-        else:
-            idx = i % 4
-            patterns = p3_even_patterns if i % 2 == 0 else p3_odd_patterns
-            fake_cells, real_cells = patterns[idx]
-            add(fake_atk(fake_cells, real_cells))
+        fake_cells, real_cells = p3_patterns[i % 4]
+        add(fake_atk(fake_cells, real_cells))
 
     # Pad to exactly 40 s
     total = sum(s['duration'] for s in segs)

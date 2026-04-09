@@ -17,7 +17,7 @@ def build_level():
                         each hit followed by a 1-beat rest
     """
     BT = round(60_000 / 153)   # 392 ms per beat @ 153 BPM
-    W  = BT * 2                 # 2-beat warn = 784 ms
+    W  = BT * 3                 # 3-beat warn = 1176 ms
     H  = BT * 2                 # 2-beat hit  = 784 ms
 
     # ── Named lines ──────────────────────────────────────────────────────────
@@ -55,8 +55,13 @@ def build_level():
     p1_time = 0
     for sweep in p1_sweeps:
         for line in sweep:
+            if p1_time + SLOT > 10_000:
+                break
             add(single_atk(line))
             p1_time += SLOT
+        else:
+            continue
+        break
 
     if p1_time < 10_000:
         segs.append(seg(10_000 - p1_time, _safe_grid()))
@@ -81,7 +86,6 @@ def build_level():
         [CL, CM, CR],   # cols going right
         [RB, RM, RT],   # rows going up
         [CR, CM, CL],   # cols going left
-        [RT, RM, RB],   # rows going down
     ]
 
     for seq in p2_sequences:
